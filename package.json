@@ -1,0 +1,15 @@
+{
+  "name": "accounting-ledger",
+  "version": "1.0.0",
+  "description": "An accounting ledger app.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}

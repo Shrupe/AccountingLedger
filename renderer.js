@@ -32,149 +32,88 @@ let state = {
     customers: [],
     products: []
 };
+let currentTab = 'dashboard';
 
 // --- UTILITY FUNCTIONS ---
 
 /**
- * Formats a number as Turkish Lira
- * @param {number} amount
- * @returns {string}
+ * Replaces all placeholder icon elements with actual Lucide SVG icons.
+ * This needs to be called after any dynamic content is rendered.
  */
-function formatCurrency(amount) {
-    const num = parseFloat(amount) || 0;
-    return num.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' });
+function replaceIcons() {
+    if (window.lucide) {
+        document.querySelectorAll('[id^="icon-"]').forEach(el => {
+            const iconName = el.id.replace('icon-', '');
+            // Convert kebab-case (e.g., package-plus) to PascalCase (e.g., PackagePlus)
+            const iconPascal = iconName.charAt(0).toUpperCase() + iconName.slice(1).replace(/-(\w)/g, (m, g) => g.toUpperCase());
+            
+            if (window.lucide[iconPascal]) {
+                const svg = window.lucide.createElement(window.lucide[iconPascal]);
+                
+                // Copy all attributes from placeholder (class, width, height, etc.)
+                for (const attr of el.attributes) {
+                    if (attr.name !== 'id') {
+                        svg.setAttribute(attr.name, attr.value);
+                    }
+                }
+                
+                // Set default size if not provided
+                if (!svg.getAttribute('width')) svg.setAttribute('width', '18');
+                if (!svg.getAttribute('height')) svg.setAttribute('height', '18');
+                
+                // Check if element is still in the DOM before replacing
+                if (el.parentNode) {
+                    el.parentNode.replaceChild(svg, el);
+                }
+            } else {
+                // console.warn(`Lucide icon not found: ${iconPascal}`);
+            }
+        });
+    }
 }
 
 /**
- * Show a toast message
- * @param {string} message
- * @param {string} type - 'success' or 'error'
+ * Formats a number as Turkish Lira
+ */
+function formatCurrency(value) {
+    if (isNaN(value)) value = 0;
+    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
+}
+
+/**
+ * Gets today's date in YYYY-MM-DD format
+ */
+function getTodayDate() {
+    return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Shows a toast notification
  */
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toast-message');
     
     toastMessage.textContent = message;
+    
+    // Set color
+    toast.classList.remove('bg-green-500', 'bg-red-500');
     if (type === 'error') {
-        toast.classList.remove('bg-green-500');
         toast.classList.add('bg-red-500');
     } else {
-        toast.classList.remove('bg-red-500');
         toast.classList.add('bg-green-500');
     }
     
-    toast.classList.remove('translate-x-full');
+    // Show toast
+    toast.style.transform = 'translateX(0)';
+    
+    // Hide after 3 seconds
     setTimeout(() => {
-        toast.classList.add('translate-x-full');
+        toast.style.transform = 'translateX(calc(100% + 2rem))';
     }, 3000);
 }
 
-/**
- * Gets today's date in YYYY-MM-DD format
- * @returns {string}
- */
-function getTodayDate() {
-    return new Date().toISOString().split('T')[0];
-}
-
-// --- DATA IMPORT LOGIC ---
-
-document.getElementById('import-btn').addEventListener('click', async () => {
-    try {
-        let importedTransactions = [];
-        let importedProducts = [];
-
-        // 1. Import Transactions
-        const transactionsCSV = document.getElementById('import-transactions').value;
-        if (transactionsCSV) {
-            const parsedTransactions = Papa.parse(transactionsCSV, { header: true, skipEmptyLines: true }).data;
-            importedTransactions = parsedTransactions.map(t => ({
-                id: DB.generateId(),
-                date: t['TARİH'] || getTodayDate(),
-                customer: (t['ADI SOYADI'] || 'İSİMSİZ').trim(),
-                type: (t['VERESİYE/SATIŞ'] || 'SATIŞ').trim(),
-                productType: (t['MALIN CİNSİ'] || 'DİĞER').trim(),
-                productName: (t['ÇEŞİT'] || 'Bilinmeyen Ürün').trim(),
-                quantity: parseFloat(t['MİKTAR'] || 0),
-                unit: (t['ADET'] || 'TANE').trim(),
-                price: parseFloat(t['FİYAT'] || 0),
-                total: parseFloat(t['TOPLAM'] || 0)
-            }));
-        }
-        
-        // 2. Import Products
-        const productsCSV = document.getElementById('import-products').value;
-        if (productsCSV) {
-            const parsedProducts = Papa.parse(productsCSV, { header: true, skipEmptyLines: true }).data;
-            const productMap = new Map(); // Use map to handle duplicates
-            
-            parsedProducts.forEach(p => {
-                const name = p['ÜRÜN ADI'] || p['İLAÇ ADI'] || p['GÜBRE ADI'];
-                const price = parseFloat(p['FİYAT'] || 0);
-                if (name && price > 0 && !productMap.has(name.trim())) {
-                    productMap.set(name.trim(), {
-                        id: DB.generateId(),
-                        name: name.trim(),
-                        type: name.toLowerCase().includes('lt') || name.toLowerCase().includes('ec') ? 'İLAÇ' : 'GÜBRE',
-                        price: price
-                    });
-                }
-            });
-            importedProducts = Array.from(productMap.values());
-            await DB.set('products', importedProducts);
-            state.products = importedProducts;
-            console.log('Imported products:', importedProducts);
-        }
-        
-        // 3. Auto-generate customers from transactions
-        const customerSet = new Set(importedTransactions.map(t => t.customer));
-        const existingCustomers = new Set((await DB.get('customers')).map(c => c.name));
-        const newCustomers = [];
-        
-        customerSet.forEach(name => {
-            if (!existingCustomers.has(name) && name.toLowerCase() !== 'i̇si̇msi̇z') {
-                newCustomers.push({
-                    id: DB.generateId(),
-                    name: name,
-                    phone: ''
-                });
-            }
-        });
-        
-        const allCustomers = [...(await DB.get('customers')), ...newCustomers];
-        await DB.set('customers', allCustomers);
-        state.customers = allCustomers;
-        
-        // 4. Update transactions with prices from product list
-        importedTransactions.forEach(t => {
-            if (t.price === 0 && t.total === 0) {
-                const product = state.products.find(p => p.name === t.productName);
-                if (product) {
-                    t.price = product.price;
-                    t.total = t.price * t.quantity;
-                }
-            } else if (t.price === 0 && t.total > 0 && t.quantity > 0) {
-                t.price = t.total / t.quantity;
-            }
-        });
-        
-        await DB.set('transactions', importedTransactions);
-        state.transactions = importedTransactions;
-        console.log('Imported transactions:', importedTransactions);
-
-        showToast('Data imported successfully!', 'success');
-        // Refresh all views
-        loadInitialData(); // This will re-load from the files we just saved
-        showTab('dashboard');
-
-    } catch (error) {
-        console.error('Import failed:', error);
-        showToast('Error during import. Check console.', 'error');
-    }
-});
-
-// --- TAB SWITCHING ---
-let currentTab = 'dashboard';
+// --- NAVIGATION ---
 const tabs = document.querySelectorAll('.tab-content');
 const tabButtons = document.querySelectorAll('.tab-button');
 
@@ -183,157 +122,226 @@ function showTab(tabId) {
     document.getElementById(tabId).style.display = 'block';
     
     tabButtons.forEach(button => button.classList.remove('active'));
-    // --- THIS IS THE FIX ---
-    // We now select the button by its 'data-tab' attribute, not the broken 'onclick'
     const activeButton = document.querySelector(`.tab-button[data-tab="${tabId}"]`);
     if (activeButton) {
         activeButton.classList.add('active');
     }
-    // --- END OF FIX ---
     
     currentTab = tabId;
     
-    if (tabId === 'dashboard') {
-        renderDashboard();
-    } else if (tabId === 'transactions') {
-        renderTransactionTable(state.transactions);
-    } else if (tabId === 'customers') {
-        renderCustomerTable();
-    } else if (tabId === 'products') {
-        renderProductTable();
-    } else if (tabId === 'newTransaction') {
-        updateDatalists();
-        document.getElementById('t-date').value = getTodayDate();
+    // Refresh data when switching to a tab
+    if (tabId === 'dashboard') renderDashboard();
+    if (tabId === 'transactions') renderTransactionTable(state.transactions);
+    if (tabId === 'customers') renderCustomerTable();
+    if (tabId === 'products') renderProductTable();
+}
+
+// --- DATA RENDERING ---
+
+/**
+ * Loads all initial data from files and renders the dashboard
+ */
+async function loadInitialData() {
+    state.transactions = await DB.get('transactions');
+    state.customers = await DB.get('customers');
+    state.products = await DB.get('products');
+    
+    renderDashboard();
+    updateDatalists();
+    
+    // Set default date for new transaction
+    document.getElementById('t-date').value = getTodayDate();
+    
+    // Show import tab if no data
+    if (state.transactions.length === 0 && state.products.length === 0) {
+        showTab('import');
     }
 }
 
-// --- DASHBOARD LOGIC ---
+/**
+ * Updates the dashboard with current stats
+ */
 function renderDashboard() {
     let totalTransactions = state.transactions.length;
     let totalCredit = 0;
     let totalSales = 0;
-    const customerBalances = new Map();
+    
+    const customerBalances = {};
 
     state.transactions.forEach(t => {
-        const total = parseFloat(t.total) || 0;
-        
-        if (t.type === 'VERESİYE' || t.type === 'İKİSİDE') {
-            totalCredit += total;
+        if (t.type === 'VERESİYE') {
+            totalCredit += t.total;
+        } else if (t.type === 'SATIŞ') {
+            totalSales += t.total;
+        } else if (t.type === 'İKİSİDE') {
+            // Assuming 'İKİSİDE' might need different logic, but for now...
+            totalSales += t.total; // Or split logic
         }
-        if (t.type === 'SATIŞ' || t.type === 'İKİSİDE') {
-            totalSales += total;
+
+        // Update customer balances
+        if (!customerBalances[t.customer]) {
+            customerBalances[t.customer] = 0;
         }
-        
-        const currentBalance = customerBalances.get(t.customer) || 0;
-        customerBalances.set(t.customer, currentBalance + total);
+        if (t.type === 'VERESİYE') {
+            customerBalances[t.customer] += t.total;
+        } else if (t.type === 'SATIŞ') {
+            // This might reduce balance if it's a payment?
+            // For now, just summing up total spent.
+            // customerBalances[t.customer] -= t.total; // Uncomment if SATIŞ is payment
+        }
     });
-    
+
     document.getElementById('total-transactions').textContent = totalTransactions;
     document.getElementById('total-credit').textContent = formatCurrency(totalCredit);
     document.getElementById('total-sales').textContent = formatCurrency(totalSales);
     document.getElementById('total-customers').textContent = state.customers.length;
-    
-    const balanceBody = document.getElementById('customer-balances-table');
-    balanceBody.innerHTML = '';
-    
-    const sortedBalances = [...customerBalances.entries()].sort((a, b) => b[1] - a[1]);
-    
-    if (sortedBalances.length === 0) {
-         balanceBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No customer data.</td></tr>';
-         return;
+
+    // Add Net Balance calculation
+    const netBalance = totalSales - totalCredit;
+    const netBalanceEl = document.getElementById('net-balance');
+    netBalanceEl.textContent = formatCurrency(netBalance);
+    // Clear previous color classes
+    netBalanceEl.classList.remove('text-red-600', 'text-green-600', 'text-gray-800');
+    if (netBalance > 0) {
+        netBalanceEl.classList.add('text-green-600'); // More credit than sales
+    } else if (netBalance < 0) {
+        netBalanceEl.classList.add('text-red-600'); // More sales than credit
+    } else {
+        netBalanceEl.classList.add('text-gray-800'); // Balanced
     }
     
-    sortedBalances.forEach(([name, balance]) => {
+    const balanceBody = document.getElementById('customer-balances-table');
+    balanceBody.innerHTML = ''; // Clear old data
+    Object.keys(customerBalances).forEach(customerName => {
+        const balance = customerBalances[customerName];
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td>${name}</td>
+            <td>${customerName}</td>
             <td>${formatCurrency(balance)}</td>
-            <td><span class="px-2 py-1 rounded-full text-xs font-medium ${balance > 10000 ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}">
-                ${balance > 10000 ? 'High' : 'Normal'}
-            </span></td>
+            <td>
+                <span class="px-2 py-1 text-xs font-medium rounded-full ${
+                    balance > 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                }">
+                    ${balance > 0 ? 'Owes Money' : 'Paid'}
+                </span>
+            </td>
         `;
         balanceBody.appendChild(row);
     });
 }
 
-// --- NEW TRANSACTION LOGIC ---
+/**
+ * Updates the autocomplete <datalist> for customers and products
+ */
+function updateDatalists() {
+    const customerList = document.getElementById('customer-list');
+    customerList.innerHTML = '';
+    state.customers.forEach(c => {
+        const option = document.createElement('option');
+        option.value = c.name;
+        customerList.appendChild(option);
+    });
+    
+    const productList = document.getElementById('product-list');
+    productList.innerHTML = '';
+    state.products.forEach(p => {
+        const option = document.createElement('option');
+        option.value = p.name;
+        productList.appendChild(option);
+    });
+}
+
+
+// --- NEW TRANSACTION FORM ---
 const transactionForm = document.getElementById('transaction-form');
 const tQuantity = document.getElementById('t-quantity');
 const tPrice = document.getElementById('t-price');
 const tTotal = document.getElementById('t-total');
 const tProductName = document.getElementById('t-product-name');
 
-function updateTransactionTotal() {
+// Auto-calculate total
+function calculateTotal() {
     const quantity = parseFloat(tQuantity.value) || 0;
     const price = parseFloat(tPrice.value) || 0;
     const total = quantity * price;
     tTotal.value = formatCurrency(total);
 }
+tQuantity.addEventListener('input', calculateTotal);
+tPrice.addEventListener('input', calculateTotal);
 
-tQuantity.addEventListener('input', updateTransactionTotal);
-tPrice.addEventListener('input', updateTransactionTotal);
-
-tProductName.addEventListener('input', (e) => {
-    const productName = e.target.value;
-    const product = state.products.find(p => p.name === productName);
+// Auto-fill price when product is selected
+tProductName.addEventListener('change', () => {
+    const productName = tProductName.value.trim();
+    const product = state.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
     if (product) {
         tPrice.value = product.price;
-        updateTransactionTotal();
+        calculateTotal();
     }
 });
 
 transactionForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    const productName = tProductName.value.trim();
+    const product = state.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
+    
+    let price = parseFloat(tPrice.value);
+    if (!price && product) {
+        price = product.price;
+    }
+
+    const total = price * parseFloat(tQuantity.value);
     
     const newTransaction = {
         id: DB.generateId(),
         date: document.getElementById('t-date').value,
         customer: document.getElementById('t-customer').value.trim(),
         type: document.getElementById('t-type').value,
-        productType: document.getElementById('t-product-type').value,
-        productName: document.getElementById('t-product-name').value.trim(),
+        productType: product ? product.type : 'DİĞER', // Auto-set product type
+        productName: productName,
         quantity: parseFloat(tQuantity.value),
         unit: document.getElementById('t-unit').value,
-        price: parseFloat(tPrice.value),
-        total: (parseFloat(tQuantity.value) * parseFloat(tPrice.value))
+        price: price,
+        total: total
     };
-    
-    state.transactions.unshift(newTransaction);
-    await DB.set('transactions', state.transactions);
-    
-    if (!state.customers.find(c => c.name === newTransaction.customer)) {
-        const newCustomer = {
-            id: DB.generateId(),
-            name: newTransaction.customer,
-            phone: ''
-        };
-        state.customers.push(newCustomer);
-        await DB.set('customers', state.customers);
+
+    if (!newTransaction.date || !newTransaction.customer || !newTransaction.productName || !newTransaction.quantity || !newTransaction.price) {
+        showToast('Please fill in all required fields (Date, Customer, Product, Quantity, Price).', 'error');
+        return;
     }
-    
-    showToast('Transaction saved!', 'success');
-    transactionForm.reset();
-    document.getElementById('t-date').value = getTodayDate();
-    
-    showTab('transactions');
+
+    state.transactions.push(newTransaction);
+    const saved = await DB.set('transactions', state.transactions);
+
+    if (saved) {
+        showToast('Transaction saved!', 'success');
+        transactionForm.reset();
+        document.getElementById('t-date').value = getTodayDate(); // Reset date
+        renderDashboard(); // Update dashboard
+        renderTransactionTable(state.transactions); // Update search table
+    } else {
+        showToast('Failed to save transaction.', 'error');
+        // Rollback state if save failed
+        state.transactions.pop();
+    }
 });
 
-// --- TRANSACTION LIST / SEARCH LOGIC ---
+
+// --- SEARCH TRANSACTIONS ---
 const filterBtn = document.getElementById('filter-btn');
 const resetFilterBtn = document.getElementById('reset-filter-btn');
+const noTransactionsEl = document.getElementById('no-transactions');
 
 function renderTransactionTable(transactions) {
     const tableBody = document.getElementById('transaction-table-body');
-    const noDataEl = document.getElementById('no-transactions');
     tableBody.innerHTML = '';
     
-    if (!transactions || transactions.length === 0) {
-        noDataEl.style.display = 'block';
-        return;
+    if (transactions.length === 0) {
+        noTransactionsEl.style.display = 'block';
+    } else {
+        noTransactionsEl.style.display = 'none';
     }
-    
-    noDataEl.style.display = 'none';
-    
+
     transactions.forEach(t => {
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -346,41 +354,41 @@ function renderTransactionTable(transactions) {
             <td>${t.unit}</td>
             <td>${formatCurrency(t.price)}</td>
             <td>${formatCurrency(t.total)}</td>
-            <td>
+            <td class="flex gap-2">
                 <button class="btn btn-danger btn-delete-transaction" data-id="${t.id}">
-                    <svg id="icon-trash" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
             </td>
         `;
         tableBody.appendChild(row);
     });
+
+    // Replace icons after rendering
+    replaceIcons();
 }
 
-// REMOVE THE OLD DELETE FUNCTION
-// window.deleteTransaction = async (id) => { ... }
-
 filterBtn.addEventListener('click', () => {
-    const customerFilter = document.getElementById('f-customer').value.toLowerCase();
-    const typeFilter = document.getElementById('f-type').value;
-    const productTypeFilter = document.getElementById('f-product-type').value;
-    
-    const filteredTransactions = state.transactions.filter(t => {
-        const customerMatch = t.customer.toLowerCase().includes(customerFilter);
-        const typeMatch = !typeFilter || t.type === typeFilter;
-        const productTypeMatch = !productTypeFilter || t.productType === productTypeFilter;
-        
+    const fCustomer = document.getElementById('f-customer').value.toLowerCase();
+    const fType = document.getElementById('f-type').value;
+    const fProductType = document.getElementById('f-product-type').value;
+
+    const filtered = state.transactions.filter(t => {
+        const customerMatch = t.customer.toLowerCase().includes(fCustomer);
+        const typeMatch = !fType || t.type === fType;
+        const productTypeMatch = !fProductType || t.productType === fProductType;
         return customerMatch && typeMatch && productTypeMatch;
     });
     
-    renderTransactionTable(filteredTransactions);
+    renderTransactionTable(filtered);
 });
 
 resetFilterBtn.addEventListener('click', () => {
-     document.getElementById('f-customer').value = '';
-     document.getElementById('f-type').value = '';
-     document.getElementById('f-product-type').value = '';
-     renderTransactionTable(state.transactions);
+    document.getElementById('f-customer').value = '';
+    document.getElementById('f-type').value = '';
+    document.getElementById('f-product-type').value = '';
+    renderTransactionTable(state.transactions);
 });
+
 
 // --- CUSTOMER MANAGEMENT ---
 const customerForm = document.getElementById('customer-form');
@@ -388,25 +396,22 @@ const customerForm = document.getElementById('customer-form');
 function renderCustomerTable() {
     const tableBody = document.getElementById('customer-table-body');
     tableBody.innerHTML = '';
-    
-    if (state.customers.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-400">No customers saved.</td></tr>';
-        return;
-    }
-
     state.customers.forEach(c => {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${c.name}</td>
             <td>${c.phone || '-'}</td>
-            <td>
+            <td class="flex gap-2">
                 <button class="btn btn-danger btn-delete-customer" data-id="${c.id}">
-                    <svg id="icon-trash" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
             </td>
         `;
         tableBody.appendChild(row);
     });
+
+    // Replace icons after rendering
+    replaceIcons();
 }
 
 customerForm.addEventListener('submit', async (e) => {
@@ -419,17 +424,7 @@ customerForm.addEventListener('submit', async (e) => {
         return;
     }
     
-    if (state.customers.find(c => c.name.toLowerCase() === name.toLowerCase())) {
-        showToast('A customer with this name already exists.', 'error');
-        return;
-    }
-    
-    const newCustomer = {
-        id: DB.generateId(),
-        name: name,
-        phone: phone
-    };
-    
+    const newCustomer = { id: DB.generateId(), name, phone };
     state.customers.push(newCustomer);
     await DB.set('customers', state.customers);
     
@@ -439,8 +434,6 @@ customerForm.addEventListener('submit', async (e) => {
     showToast('Customer added!', 'success');
 });
 
-// REMOVE THE OLD DELETE FUNCTION
-// window.deleteCustomer = async (id) => { ... }
 
 // --- PRODUCT MANAGEMENT ---
 const productForm = document.getElementById('product-form');
@@ -448,26 +441,26 @@ const productForm = document.getElementById('product-form');
 function renderProductTable() {
     const tableBody = document.getElementById('product-table-body');
     tableBody.innerHTML = '';
-    
-    if (state.products.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-400">No products saved. Import or add them.</td></tr>';
-        return;
-    }
-
     state.products.forEach(p => {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${p.name}</td>
             <td>${p.type || 'DİĞER'}</td>
             <td>${formatCurrency(p.price)}</td>
-            <td>
+            <td class="flex gap-2">
+                <button class="btn btn-secondary btn-edit-product" data-id="${p.id}">
+                    <svg id="icon-edit" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
                 <button class="btn btn-danger btn-delete-product" data-id="${p.id}">
-                    <svg id="icon-trash" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
             </td>
         `;
         tableBody.appendChild(row);
     });
+
+    // Replace icons after rendering
+    replaceIcons();
 }
 
 productForm.addEventListener('submit', async (e) => {
@@ -481,18 +474,7 @@ productForm.addEventListener('submit', async (e) => {
         return;
     }
     
-    if (state.products.find(p => p.name.toLowerCase() === name.toLowerCase())) {
-        showToast('A product with this name already exists.', 'error');
-        return;
-    }
-    
-    const newProduct = {
-        id: DB.generateId(),
-        name: name,
-        type: type,
-        price: price
-    };
-    
+    const newProduct = { id: DB.generateId(), name, type, price };
     state.products.push(newProduct);
     await DB.set('products', state.products);
     
@@ -502,76 +484,81 @@ productForm.addEventListener('submit', async (e) => {
     showToast('Product added!', 'success');
 });
 
-// REMOVE THE OLD DELETE FUNCTION
-// window.deleteProduct = async (id) => { ... }
 
-// --- AUTOCOMPLETE DATALISTS ---
-function updateDatalists() {
-    const customerDatalist = document.getElementById('customer-list');
-    customerDatalist.innerHTML = '';
-    state.customers.forEach(c => {
-        const option = document.createElement('option');
-        option.value = c.name;
-        customerDatalist.appendChild(option);
-    });
+// --- DATA IMPORT ---
+const importBtn = document.getElementById('import-btn');
+
+importBtn.addEventListener('click', async () => {
+    const transactionCSV = document.getElementById('import-transactions').value;
+    const productCSV = document.getElementById('import-products').value;
     
-    const productDatalist = document.getElementById('product-list');
-    productDatalist.innerHTML = '';
-    state.products.forEach(p => {
-        const option = document.createElement('option');
-        option.value = p.name;
-        productDatalist.appendChild(option);
-    });
-}
-
-// --- INITIALIZE APP ---
-async function loadInitialData() {
-    const transactionsResult = await DB.get('transactions');
-    const customersResult = await DB.get('customers');
-    const productsResult = await DB.get('products');
-
-    state.transactions = Array.isArray(transactionsResult) ? transactionsResult : [];
-    state.customers = Array.isArray(customersResult) ? customersResult : [];
-    state.products = Array.isArray(productsResult) ? productsResult : [];
+    let importedTransactions = [];
+    let importedProducts = [];
     
-    if (state.transactions.length === 0 && state.products.length === 0) {
-        showTab('import');
-    } else {
-        showTab('dashboard');
+    // Parse Transactions
+    try {
+        const transactionData = Papa.parse(transactionCSV, { header: true, skipEmptyLines: true });
+        importedTransactions = transactionData.data.map(row => ({
+            id: DB.generateId(),
+            date: row['TARİH'] || getTodayDate(),
+            customer: row['ADI SOYADI'] || 'İSİMSİZ',
+            type: row['VERESİYE/SATIŞ'] || 'SATIŞ',
+            productType: row['MALIN CİNSİ'] || 'DİĞER',
+            productName: row['ÇEŞİT'] || 'Bilinmeyen Ürün',
+            quantity: parseFloat(row['MİKTAR']) || 1,
+            unit: row['ADET'] || 'TANE',
+            price: parseFloat(row['FİYAT']) || 0, // Assuming price isn't in this CSV
+            total: parseFloat(row['TOPLAM']) || 0 // Assuming total isn't in this CSV
+        }));
+    } catch (e) {
+        showToast(`Error parsing transactions: ${e.message}`, 'error');
+        return;
     }
     
-    updateDatalists();
-    renderTransactionTable(state.transactions);
-    renderCustomerTable();
-    renderProductTable();
-    renderDashboard();
-}
+    // Parse Products
+    try {
+        const productData = Papa.parse(productCSV, { header: true, skipEmptyLines: true });
+        importedProducts = productData.data.map(row => ({
+            id: DB.generateId(),
+            name: row['ÜRÜN ADI'] || row['İLAÇ ADI'] || row['GÜBRE ADI'] || 'Bilinmeyen Ürün',
+            type: (row['İLAÇ ADI'] ? 'İLAÇ' : (row['GÜBRE ADI'] ? 'GÜBRE' : 'DİĞER')),
+            price: parseFloat(row['FİYAT']) || 0
+        })).filter(p => p.price > 0 && p.name !== 'Bilinmeyen Ürün'); // Filter out bad data
+    } catch (e) {
+        showToast(`Error parsing products: ${e.message}`, 'error');
+        return;
+    }
+    
+    // Save to state and DB
+    state.transactions = importedTransactions;
+    state.products = importedProducts;
+    
+    // Also extract customers from transactions
+    const customerNames = new Set(importedTransactions.map(t => t.customer));
+    state.customers = [...customerNames].map(name => ({ id: DB.generateId(), name, phone: '' }));
+    
+    await DB.set('transactions', state.transactions);
+    await DB.set('products', state.products);
+    await DB.set('customers', state.customers);
+    
+    showToast('Data imported successfully!', 'success');
+    loadInitialData(); // Reload all data from files
+    showTab('dashboard'); // Switch to dashboard
+});
 
-// --- REPLACE ICON PLACEHOLDERS ---
+
+// --- GLOBAL EVENT LISTENERS ---
 // This needs to run *after* the main HTML document is loaded
 document.addEventListener('DOMContentLoaded', () => {
     // We must wait for Lucide to load from the CDN
     const iconInterval = setInterval(() => {
         if (window.lucide) {
             clearInterval(iconInterval);
-            document.querySelectorAll('[id^="icon-"]').forEach(el => {
-                const iconName = el.id.replace('icon-', '');
-                const iconPascal = iconName.charAt(0).toUpperCase() + iconName.slice(1).replace(/-(\w)/g, (m, g) => g.toUpperCase());
-                
-                if (window.lucide[iconPascal]) {
-                    const svg = window.lucide.createElement(window.lucide[iconPascal]);
-                    svg.setAttribute('width', el.getAttribute('width') || '20');
-                    svg.setAttribute('height', el.getAttribute('height') || '20');
-                    svg.setAttribute('stroke', el.getAttribute('stroke') || 'currentColor');
-                    el.parentNode.replaceChild(svg, el);
-                }
-            });
+            replaceIcons(); // Initial icon replacement
         }
     }, 100);
 
-    // --- ADD ALL OUR CLICK LISTENERS HERE ---
-
-    // 1. Tab navigation
+    // --- Tab navigation
     document.querySelectorAll('.tab-button').forEach(button => {
         button.addEventListener('click', () => {
             const tabId = button.getAttribute('data-tab');
@@ -581,14 +568,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 2. Clear Transaction Form button
+    // --- Clear Transaction Form button
     document.getElementById('clear-form-btn').addEventListener('click', () => {
         document.getElementById('transaction-form').reset();
         document.getElementById('t-date').value = getTodayDate();
     });
 
-    // 3. Event Delegation for Delete Buttons
-    // This one listener handles all clicks inside the transaction table body
+    // --- Event Delegation for Delete Buttons ---
+    
+    // Transaction table
     document.getElementById('transaction-table-body').addEventListener('click', async (e) => {
         const deleteButton = e.target.closest('.btn-delete-transaction');
         if (deleteButton) {
@@ -597,6 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.transactions = state.transactions.filter(t => t.id !== id);
                 await DB.set('transactions', state.transactions);
                 renderTransactionTable(state.transactions);
+                renderDashboard(); // Update dashboard
                 showToast('Transaction deleted.', 'success');
             }
         }
@@ -612,13 +601,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 await DB.set('customers', state.customers);
                 renderCustomerTable();
                 updateDatalists();
+                renderDashboard(); // Update dashboard
                 showToast('Customer deleted.', 'success');
             }
         }
     });
 
-    // Product table
+    // Product table (Handles Edit AND Delete)
     document.getElementById('product-table-body').addEventListener('click', async (e) => {
+        // Check for delete
         const deleteButton = e.target.closest('.btn-delete-product');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
@@ -629,11 +620,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateDatalists();
                 showToast('Product deleted.', 'success');
             }
+            return; // Stop further execution
+        }
+        
+        // Check for edit
+        const editButton = e.target.closest('.btn-edit-product');
+        if (editButton) {
+            const id = editButton.getAttribute('data-id');
+            const product = state.products.find(p => p.id === id);
+            if (product) {
+                document.getElementById('edit-p-id').value = product.id;
+                document.getElementById('edit-p-name').value = product.name;
+                document.getElementById('edit-p-type').value = product.type;
+                document.getElementById('edit-p-price').value = product.price;
+                document.getElementById('edit-product-modal').style.display = 'flex';
+            }
         }
     });
+
+
+    // --- Product Edit Modal Listeners ---
+    const editModal = document.getElementById('edit-product-modal');
+    const editForm = document.getElementById('edit-product-form');
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+
+    // Close modal
+    cancelEditBtn.addEventListener('click', () => {
+        editModal.style.display = 'none';
+    });
+
+    // Save changes from modal
+    editForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('edit-p-id').value;
+        const updatedProduct = {
+            id: id,
+            name: document.getElementById('edit-p-name').value.trim(),
+            type: document.getElementById('edit-p-type').value,
+            price: parseFloat(document.getElementById('edit-p-price').value)
+        };
+
+        if (!updatedProduct.name || updatedProduct.price < 0) {
+            showToast('Invalid product name or price.', 'error');
+            return;
+        }
+
+        state.products = state.products.map(p => p.id === id ? updatedProduct : p);
+        await DB.set('products', state.products);
+
+        renderProductTable();
+        updateDatalists();
+        editModal.style.display = 'none';
+        showToast('Product updated!', 'success');
+    });
+
 
     // Load initial data from JSON files
     loadInitialData();
 });
-
 

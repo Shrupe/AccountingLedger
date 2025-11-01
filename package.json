@@ -4,12 +4,16 @@
   "description": "An accounting ledger app.",
   "main": "main.js",
   "scripts": {
-    "start": "electron . --no-sandbox"
+    "start": "electron . --no-sandbox",
+    "watch": "watch 'npm run build' ."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "electron": "^28.0.0"
+  },
+  "dependencies": {
+    "watch": "^1.0.2"
   }
 }

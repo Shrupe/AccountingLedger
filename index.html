@@ -210,7 +210,7 @@
         <!-- Dashboard Tab -->
         <div id="dashboard" class="tab-content">
             <h1 class="text-3xl font-bold mb-6 text-gray-800">Dashboard</h1>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <div class="card p-6">
                     <h2 class="text-sm font-medium text-gray-500 uppercase">Total Transactions</h2>
                     <p id="total-transactions" class="text-3xl font-bold mt-2 text-gray-800">0</p>
@@ -222,6 +222,10 @@
                 <div class="card p-6">
                     <h2 class="text-sm font-medium text-gray-500 uppercase">Total Sales (Satış)</h2>
                     <p id="total-sales" class="text-3xl font-bold mt-2 text-green-600">0.00 TL</p>
+                </div>
+                <div class="card p-6">
+                    <h2 class="text-sm font-medium text-gray-500 uppercase">Net Balance (Credit - Sales)</h2>
+                    <p id="net-balance" class="text-3xl font-bold mt-2 text-gray-800">0.00 TL</p>
                 </div>
                 <div class="card p-6">
                     <h2 class="text-sm font-medium text-gray-500 uppercase">Unique Customers</h2>
@@ -261,10 +265,6 @@
                     <input type="date" id="t-date" class="form-input" required>
                 </div>
                 <div>
-                    <label for="t-customer" class="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
-                    <input type="text" id="t-customer" class="form-input" list="customer-list" placeholder="Start typing..." required>
-                </div>
-                <div>
                     <label for="t-type" class="block text-sm font-medium text-gray-700 mb-1">Type (Veresiye/Satış)</label>
                     <select id="t-type" class="form-select" required>
                         <option value="VERESİYE">VERESİYE (Credit)</option>
@@ -273,18 +273,12 @@
                         <option value="İKİSİDE">İKİSİDE (Both)</option>
                     </select>
                 </div>
-                <div>
-                    <label for="t-product-type" class="block text-sm font-medium text-gray-700 mb-1">Product Type (Malın Cinsi)</label>
-                    <select id="t-product-type" class="form-select">
-                        <option value="İLAÇ">İLAÇ (Pesticide)</option>
-                        <option value="GÜBRE">GÜBRE (Fertilizer)</option>
-                        <option value="KÖMÜR">KÖMÜR (Coal)</option>
-                        <option value="TOHUM">TOHUM (Seed)</option>
-                        <option value="FİDE">FİDE (Seedling)</option>
-                        <option value="ARI">ARI (Bee)</option>
-                        <option value="DİĞER">DİĞER (Other)</option>
-                    </select>
+                
+                <div class="md:col-span-2">
+                    <label for="t-customer" class="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                    <input type="text" id="t-customer" class="form-input" list="customer-list" placeholder="Start typing..." required>
                 </div>
+
                 <div class="md:col-span-2">
                     <label for="t-product-name" class="block text-sm font-medium text-gray-700 mb-1">Product Name (Çeşit)</label>
                     <input type="text" id="t-product-name" class="form-input" list="product-list" placeholder="Start typing...">
@@ -307,7 +301,7 @@
                 </div>
                 <div>
                     <label for="t-price" class="block text-sm font-medium text-gray-700 mb-1">Unit Price (Fiyat)</label>
-                    <input type="number" id="t-price" class="form-input" min="0" step="any" placeholder="0.00">
+                    <input type="number" id="t-price" class="form-input" min="0" step="any" placeholder="Auto-fills from product">
                 </div>
                 <div>
                     <label for="t-total" class="block text-sm font-medium text-gray-700 mb-1">Total (Toplam)</label>
@@ -510,6 +504,36 @@
     <!-- Global Alert/Toast -->
     <div id="toast" class="fixed bottom-8 right-8 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 ease-out">
         <span id="toast-message"></span>
+    </div>
+
+    <!-- Edit Product Modal -->
+    <div id="edit-product-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50" style="display: none;">
+        <div class="card p-6 w-full max-w-md">
+            <h2 class="text-2xl font-bold mb-4">Edit Product</h2>
+            <form id="edit-product-form">
+                <input type="hidden" id="edit-p-id">
+                <div class="mb-4">
+                    <label for="edit-p-name" class="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                    <input type="text" id="edit-p-name" class="form-input" required>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-p-type" class="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
+                    <select id="edit-p-type" class="form-select" required>
+                        <option value="İLAÇ">İLAÇ</option>
+                        <option value="GÜBRE">GÜBRE</option>
+                        <option value="DİĞER">DİĞER</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-p-price" class="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                    <input type="number" id="edit-p-price" class="form-input" min="0" step="any" required>
+                </div>
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-edit-btn" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script src="./renderer.js" defer></script>

@@ -146,6 +146,9 @@ async function loadInitialData() {
     state.customers = await DB.get('customers');
     state.products = await DB.get('products');
     
+    // Recompute and persist per-customer aggregates (veresiye/satis)
+    await updateCustomerAggregates(true);
+
     renderDashboard();
     updateDatalists();
     
@@ -165,31 +168,35 @@ function renderDashboard() {
     let totalTransactions = state.transactions.length;
     let totalCredit = 0;
     let totalSales = 0;
-    
-    const customerBalances = {};
 
-    state.transactions.forEach(t => {
-        if (t.type === 'VERESİYE') {
-            totalCredit += t.total;
-        } else if (t.type === 'SATIŞ') {
-            totalSales += t.total;
-        } else if (t.type === 'İKİSİDE') {
-            // Assuming 'İKİSİDE' might need different logic, but for now...
-            totalSales += t.total; // Or split logic
-        }
-
-        // Update customer balances
-        if (!customerBalances[t.customer]) {
-            customerBalances[t.customer] = 0;
-        }
-        if (t.type === 'VERESİYE') {
-            customerBalances[t.customer] += t.total;
-        } else if (t.type === 'SATIŞ') {
-            // This might reduce balance if it's a payment?
-            // For now, just summing up total spent.
-            // customerBalances[t.customer] -= t.total; // Uncomment if SATIŞ is payment
-        }
+    // Build per-customer aggregates from state.customers when available
+    const customerAggregates = {};
+    state.customers.forEach(c => {
+        customerAggregates[c.name] = {
+            veresiye: (c.veresiye) ? c.veresiye : 0,
+            satis: (c.satis) ? c.satis : 0
+        };
+        totalCredit += (c.veresiye) ? c.veresiye : 0;
+        totalSales += (c.satis) ? c.satis : 0;
     });
+
+    // Fallback: if no customer aggregates exist, compute from transactions
+    if (Object.keys(customerAggregates).length === 0) {
+        state.transactions.forEach(t => {
+            if (!customerAggregates[t.customer]) customerAggregates[t.customer] = { veresiye: 0, satis: 0 };
+            if (t.type === 'VERESİYE') {
+                customerAggregates[t.customer].veresiye += t.total;
+                totalCredit += t.total;
+            } else if (t.type === 'SATIŞ') {
+                customerAggregates[t.customer].satis += t.total;
+                totalSales += t.total;
+            } else if (t.type === 'İKİSİDE') {
+                // treat as SATIŞ for aggregate purposes by default
+                customerAggregates[t.customer].satis += t.total;
+                totalSales += t.total;
+            }
+        });
+    }
 
     document.getElementById('total-transactions').textContent = totalTransactions;
     document.getElementById('total-credit').textContent = formatCurrency(totalCredit);
@@ -212,22 +219,65 @@ function renderDashboard() {
     
     const balanceBody = document.getElementById('customer-balances-table');
     balanceBody.innerHTML = ''; // Clear old data
-    Object.keys(customerBalances).forEach(customerName => {
-        const balance = customerBalances[customerName];
+    Object.keys(customerAggregates).forEach(customerName => {
+        const ag = customerAggregates[customerName] || { veresiye: 0, satis: 0 };
+        const total = (ag.veresiye || 0) + (ag.satis || 0);
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${customerName}</td>
-            <td>${formatCurrency(balance)}</td>
+            <td>${formatCurrency(ag.veresiye || 0)}</td>
+            <td>${formatCurrency(ag.satis || 0)}</td>
+            <td>${formatCurrency(total)}</td>
             <td>
                 <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                    balance > 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                    (ag.veresiye || 0) > 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                 }">
-                    ${balance > 0 ? 'Owes Money' : 'Paid'}
+                    ${(ag.veresiye || 0) > 0 ? 'Borçlu' : 'Ödendi'}
                 </span>
             </td>
         `;
         balanceBody.appendChild(row);
     });
+}
+
+/**
+ * Recompute per-customer veresiye/satis aggregates from transactions and persist to customers file if desired.
+ * If saveToDB is true, writes updated `state.customers` to disk.
+ */
+async function updateCustomerAggregates(saveToDB = false) {
+    const aggregates = {};
+    state.transactions.forEach(t => {
+        const name = t.customer || 'İSİMSİZ';
+        if (!aggregates[name]) aggregates[name] = { veresiye: 0, satis: 0 };
+        if (t.type === 'VERESİYE') aggregates[name].veresiye += t.total;
+        else if (t.type === 'SATIŞ') aggregates[name].satis += t.total;
+        else if (t.type === 'İKİSİDE') aggregates[name].satis += t.total; // default handling
+    });
+
+    // Map existing customers by name
+    const map = {};
+    state.customers.forEach(c => map[c.name] = c);
+
+    // Update existing customers or add missing ones
+    Object.keys(aggregates).forEach(name => {
+        const a = aggregates[name];
+        if (map[name]) {
+            map[name].veresiye = a.veresiye;
+            map[name].satis = a.satis;
+        } else {
+            state.customers.push({ id: DB.generateId(), name, phone: '', veresiye: a.veresiye, satis: a.satis });
+        }
+    });
+
+    // Ensure all customers have numeric fields
+    state.customers.forEach(c => {
+        if (typeof c.veresiye !== 'number') c.veresiye = 0;
+        if (typeof c.satis !== 'number') c.satis = 0;
+    });
+
+    if (saveToDB) {
+        await DB.set('customers', state.customers);
+    }
 }
 
 /**
@@ -275,6 +325,17 @@ tProductName.addEventListener('change', () => {
     const product = state.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
     if (product) {
         tPrice.value = product.price;
+        // Auto-fill unit and product type similar to price autofill
+        try {
+            const tUnitEl = document.getElementById('t-unit');
+            if (tUnitEl && product.unit) tUnitEl.value = product.unit;
+
+            const tProductTypeEl = document.getElementById('t-product-type');
+            if (tProductTypeEl && product.type) tProductTypeEl.value = product.type;
+        } catch (err) {
+            console.warn('Auto-fill for unit/product-type failed:', err);
+        }
+
         calculateTotal();
     }
 });
@@ -317,6 +378,9 @@ transactionForm.addEventListener('submit', async (e) => {
         showToast('Transaction saved!', 'success');
         transactionForm.reset();
         document.getElementById('t-date').value = getTodayDate(); // Reset date
+        // Recompute customer aggregates and persist
+        await updateCustomerAggregates(true);
+        updateDatalists();
         renderDashboard(); // Update dashboard
         renderTransactionTable(state.transactions); // Update search table
     } else {
@@ -446,6 +510,7 @@ function renderProductTable() {
         row.innerHTML = `
             <td>${p.name}</td>
             <td>${p.type || 'DİĞER'}</td>
+            <td>${p.unit || '-'}</td>
             <td>${formatCurrency(p.price)}</td>
             <td class="flex gap-2">
                 <button class="btn btn-secondary btn-edit-product" data-id="${p.id}">
@@ -467,6 +532,7 @@ productForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('p-name').value.trim();
     const type = document.getElementById('p-type').value;
+    const unit = document.getElementById('p-unit').value.trim();
     const price = parseFloat(document.getElementById('p-price').value);
     
     if (!name || !price) {
@@ -474,7 +540,7 @@ productForm.addEventListener('submit', async (e) => {
         return;
     }
     
-    const newProduct = { id: DB.generateId(), name, type, price };
+    const newProduct = { id: DB.generateId(), name, type, unit, price };
     state.products.push(newProduct);
     await DB.set('products', state.products);
     
@@ -584,6 +650,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (confirm('Are you sure you want to delete this transaction?')) {
                 state.transactions = state.transactions.filter(t => t.id !== id);
                 await DB.set('transactions', state.transactions);
+                // Recompute customer aggregates and persist after deletion
+                await updateCustomerAggregates(true);
+                updateDatalists();
                 renderTransactionTable(state.transactions);
                 renderDashboard(); // Update dashboard
                 showToast('Transaction deleted.', 'success');
@@ -632,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('edit-p-id').value = product.id;
                 document.getElementById('edit-p-name').value = product.name;
                 document.getElementById('edit-p-type').value = product.type;
+                document.getElementById('edit-p-unit').value = product.unit || '';
                 document.getElementById('edit-p-price').value = product.price;
                 document.getElementById('edit-product-modal').style.display = 'flex';
             }
@@ -657,6 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
             id: id,
             name: document.getElementById('edit-p-name').value.trim(),
             type: document.getElementById('edit-p-type').value,
+            unit: document.getElementById('edit-p-unit').value.trim(),
             price: parseFloat(document.getElementById('edit-p-price').value)
         };
 

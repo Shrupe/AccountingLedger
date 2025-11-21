@@ -134,7 +134,38 @@ function showTab(tabId) {
     if (tabId === 'transactions') renderTransactionTable(state.transactions);
     if (tabId === 'customers') renderCustomerTable();
     if (tabId === 'products') renderProductTable();
+
+    // Reset new transaction page sub-tabs
+    if (tabId === 'newTransaction') {
+        document.getElementById('p-date').value = getTodayDate();
+        document.getElementById('t-date').value = getTodayDate();
+        showSubTab('sale'); // Default to sale tab
+    }
 }
+
+// --- Sub-tab navigation within "Yeni İşlem"
+const subTabButtons = document.querySelectorAll('.sub-tab-button');
+const subTabContents = document.querySelectorAll('.sub-tab-content');
+
+function showSubTab(subTabId) {
+    subTabContents.forEach(content => {
+        content.classList.remove('active');
+    });
+    subTabButtons.forEach(button => {
+        button.classList.remove('active');
+    });
+
+    document.getElementById(`subtab-${subTabId}`).classList.add('active');
+    document.querySelector(`.sub-tab-button[data-subtab="${subTabId}"]`).classList.add('active');
+}
+
+subTabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+        const subTabId = button.getAttribute('data-subtab');
+        showSubTab(subTabId);
+    });
+});
+
 
 // --- DATA RENDERING ---
 
@@ -154,6 +185,7 @@ async function loadInitialData() {
     
     // Set default date for new transaction
     document.getElementById('t-date').value = getTodayDate();
+    document.getElementById('p-date').value = getTodayDate();
     
     // Show import tab if no data
     if (state.transactions.length === 0 && state.products.length === 0) {
@@ -172,26 +204,22 @@ function renderDashboard() {
     // Build per-customer aggregates from state.customers when available
     const customerAggregates = {};
     state.customers.forEach(c => {
-        customerAggregates[c.name] = {
-            veresiye: (c.veresiye) ? c.veresiye : 0,
-            satis: (c.satis) ? c.satis : 0
-        };
-        totalCredit += (c.veresiye) ? c.veresiye : 0;
-        totalSales += (c.satis) ? c.satis : 0;
+        const veresiye = c.veresiye || 0;
+        const satis = c.satis || 0;
+        customerAggregates[c.name] = { veresiye, satis };
+        totalCredit += veresiye;
+        totalSales += satis;
     });
 
     // Fallback: if no customer aggregates exist, compute from transactions
     if (Object.keys(customerAggregates).length === 0) {
         state.transactions.forEach(t => {
             if (!customerAggregates[t.customer]) customerAggregates[t.customer] = { veresiye: 0, satis: 0 };
+            
             if (t.type === 'VERESİYE') {
                 customerAggregates[t.customer].veresiye += t.total;
                 totalCredit += t.total;
-            } else if (t.type === 'SATIŞ') {
-                customerAggregates[t.customer].satis += t.total;
-                totalSales += t.total;
-            } else if (t.type === 'İKİSİDE') {
-                // treat as SATIŞ for aggregate purposes by default
+            } else if (t.type === 'SATIŞ' || t.type === 'İKİSİDE' || t.type === 'ÖDEME') {
                 customerAggregates[t.customer].satis += t.total;
                 totalSales += t.total;
             }
@@ -210,9 +238,9 @@ function renderDashboard() {
     // Clear previous color classes
     netBalanceEl.classList.remove('text-red-600', 'text-green-600', 'text-gray-800');
     if (netBalance > 0) {
-        netBalanceEl.classList.add('text-green-600'); // More credit than sales
+        netBalanceEl.classList.add('text-green-600'); // More sales than credit
     } else if (netBalance < 0) {
-        netBalanceEl.classList.add('text-red-600'); // More sales than credit
+        netBalanceEl.classList.add('text-red-600'); // More credit than sales
     } else {
         netBalanceEl.classList.add('text-gray-800'); // Balanced
     }
@@ -222,6 +250,8 @@ function renderDashboard() {
     Object.keys(customerAggregates).forEach(customerName => {
         const ag = customerAggregates[customerName] || { veresiye: 0, satis: 0 };
         const total = (ag.veresiye || 0) + (ag.satis || 0);
+        const netDebt = (ag.veresiye || 0) - (ag.satis || 0); // Positive means debt
+
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${customerName}</td>
@@ -230,9 +260,9 @@ function renderDashboard() {
             <td>${formatCurrency(total)}</td>
             <td>
                 <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                    (ag.veresiye || 0) > 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                    netDebt > 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                 }">
-                    ${(ag.veresiye || 0) > 0 ? 'Borçlu' : 'Ödendi'}
+                    ${netDebt > 0 ? `Borçlu: ${formatCurrency(netDebt)}` : 'Ödendi'}
                 </span>
             </td>
         `;
@@ -249,9 +279,12 @@ async function updateCustomerAggregates(saveToDB = false) {
     state.transactions.forEach(t => {
         const name = t.customer || 'İSİMSİZ';
         if (!aggregates[name]) aggregates[name] = { veresiye: 0, satis: 0 };
-        if (t.type === 'VERESİYE') aggregates[name].veresiye += t.total;
-        else if (t.type === 'SATIŞ') aggregates[name].satis += t.total;
-        else if (t.type === 'İKİSİDE') aggregates[name].satis += t.total; // default handling
+        
+        if (t.type === 'VERESİYE') {
+            aggregates[name].veresiye += t.total;
+        } else if (t.type === 'SATIŞ' || t.type === 'İKİSİDE' || t.type === 'ÖDEME') {
+            aggregates[name].satis += t.total;
+        }
     });
 
     // Map existing customers by name
@@ -265,7 +298,10 @@ async function updateCustomerAggregates(saveToDB = false) {
             map[name].veresiye = a.veresiye;
             map[name].satis = a.satis;
         } else {
-            state.customers.push({ id: DB.generateId(), name, phone: '', veresiye: a.veresiye, satis: a.satis });
+            // New customer found in transactions, add to state
+            const newCustomer = { id: DB.generateId(), name, phone: '', veresiye: a.veresiye, satis: a.satis };
+            state.customers.push(newCustomer);
+            map[name] = newCustomer; // Add to map for next loop
         }
     });
 
@@ -302,7 +338,7 @@ function updateDatalists() {
 }
 
 
-// --- NEW TRANSACTION FORM ---
+// --- NEW TRANSACTION FORM (SALE) ---
 const transactionForm = document.getElementById('transaction-form');
 const tQuantity = document.getElementById('t-quantity');
 const tPrice = document.getElementById('t-price');
@@ -347,20 +383,21 @@ transactionForm.addEventListener('submit', async (e) => {
     const product = state.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
     
     let price = parseFloat(tPrice.value);
-    if (!price && product) {
+    if ((!price || price === 0) && product) {
         price = product.price;
     }
 
-    const total = price * parseFloat(tQuantity.value);
+    const quantity = parseFloat(tQuantity.value);
+    const total = price * quantity;
     
     const newTransaction = {
         id: DB.generateId(),
         date: document.getElementById('t-date').value,
         customer: document.getElementById('t-customer').value.trim(),
         type: document.getElementById('t-type').value,
-        productType: product ? product.type : 'DİĞER', // Auto-set product type
+        productType: document.getElementById('t-product-type').value,
         productName: productName,
-        quantity: parseFloat(tQuantity.value),
+        quantity: quantity,
         unit: document.getElementById('t-unit').value,
         price: price,
         total: total
@@ -380,11 +417,58 @@ transactionForm.addEventListener('submit', async (e) => {
         document.getElementById('t-date').value = getTodayDate(); // Reset date
         // Recompute customer aggregates and persist
         await updateCustomerAggregates(true);
-        updateDatalists();
+        updateDatalists(); // Update customer list in case of new customer
         renderDashboard(); // Update dashboard
         renderTransactionTable(state.transactions); // Update search table
     } else {
         showToast('Failed to save transaction.', 'error');
+        // Rollback state if save failed
+        state.transactions.pop();
+    }
+});
+
+// --- NEW PAYMENT FORM ---
+const paymentForm = document.getElementById('payment-form');
+
+paymentForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const paymentAmount = parseFloat(document.getElementById('p-amount').value);
+    const customerName = document.getElementById('p-customer').value.trim();
+    const paymentDate = document.getElementById('p-date').value;
+
+    if (!paymentDate || !customerName || !paymentAmount || paymentAmount <= 0) {
+        showToast('Please fill in all fields with valid data.', 'error');
+        return;
+    }
+
+    const newPaymentTransaction = {
+        id: DB.generateId(),
+        date: paymentDate,
+        customer: customerName,
+        type: 'ÖDEME', // New type
+        productType: '-',
+        productName: 'Ödeme',
+        quantity: 1,
+        unit: '-',
+        price: paymentAmount,
+        total: paymentAmount
+    };
+
+    state.transactions.push(newPaymentTransaction);
+    const saved = await DB.set('transactions', state.transactions);
+
+    if (saved) {
+        showToast('Payment saved!', 'success');
+        paymentForm.reset();
+        document.getElementById('p-date').value = getTodayDate(); // Reset date
+        // Recompute customer aggregates and persist
+        await updateCustomerAggregates(true);
+        updateDatalists(); // Update customer list in case of new customer
+        renderDashboard(); // Update dashboard
+        renderTransactionTable(state.transactions); // Update search table
+    } else {
+        showToast('Failed to save payment.', 'error');
         // Rollback state if save failed
         state.transactions.pop();
     }
@@ -406,24 +490,47 @@ function renderTransactionTable(transactions) {
         noTransactionsEl.style.display = 'none';
     }
 
+    // Sort by date, newest first
+    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
     transactions.forEach(t => {
         const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${t.date}</td>
-            <td>${t.customer}</td>
-            <td>${t.type}</td>
-            <td>${t.productType}</td>
-            <td>${t.productName}</td>
-            <td>${t.quantity}</td>
-            <td>${t.unit}</td>
-            <td>${formatCurrency(t.price)}</td>
-            <td>${formatCurrency(t.total)}</td>
-            <td class="flex gap-2">
-                <button class="btn btn-danger btn-delete-transaction" data-id="${t.id}">
-                    <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                </button>
-            </td>
-        `;
+        
+        if (t.type === 'ÖDEME') {
+            row.innerHTML = `
+                <td>${t.date}</td>
+                <td>${t.customer}</td>
+                <td><span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">${t.type}</span></td>
+                <td>-</td>
+                <td class="font-medium">${t.productName}</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td class="font-medium text-green-700">${formatCurrency(t.total)}</td>
+                <td class="flex gap-2">
+                    <button class="btn btn-danger btn-delete-transaction" data-id="${t.id}">
+                        <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                </td>
+            `;
+        } else {
+             row.innerHTML = `
+                <td>${t.date}</td>
+                <td>${t.customer}</td>
+                <td>${t.type}</td>
+                <td>${t.productType}</td>
+                <td>${t.productName}</td>
+                <td>${t.quantity}</td>
+                <td>${t.unit}</td>
+                <td>${formatCurrency(t.price)}</td>
+                <td class="font-medium ${t.type === 'VERESİYE' ? 'text-red-600' : 'text-gray-800'}">${formatCurrency(t.total)}</td>
+                <td class="flex gap-2">
+                    <button class="btn btn-danger btn-delete-transaction" data-id="${t.id}">
+                        <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                </td>
+            `;
+        }
         tableBody.appendChild(row);
     });
 
@@ -439,6 +546,7 @@ filterBtn.addEventListener('click', () => {
     const filtered = state.transactions.filter(t => {
         const customerMatch = t.customer.toLowerCase().includes(fCustomer);
         const typeMatch = !fType || t.type === fType;
+        // Payment transactions won't match product type, which is good
         const productTypeMatch = !fProductType || t.productType === fProductType;
         return customerMatch && typeMatch && productTypeMatch;
     });
@@ -488,7 +596,13 @@ customerForm.addEventListener('submit', async (e) => {
         return;
     }
     
-    const newCustomer = { id: DB.generateId(), name, phone };
+    // Check if customer already exists
+    if (state.customers.find(c => c.name.toLowerCase() === name.toLowerCase())) {
+        showToast('Customer with this name already exists.', 'error');
+        return;
+    }
+
+    const newCustomer = { id: DB.generateId(), name, phone, veresiye: 0, satis: 0 };
     state.customers.push(newCustomer);
     await DB.set('customers', state.customers);
     
@@ -639,6 +753,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('transaction-form').reset();
         document.getElementById('t-date').value = getTodayDate();
     });
+    // --- Clear Payment Form button
+    document.getElementById('clear-payment-form-btn').addEventListener('click', () => {
+        document.getElementById('payment-form').reset();
+        document.getElementById('p-date').value = getTodayDate();
+    });
 
     // --- Event Delegation for Delete Buttons ---
     
@@ -665,14 +784,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteButton = e.target.closest('.btn-delete-customer');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
-                if (confirm('Are you sure you want to delete this customer? This cannot be undone.')) {
-                state.customers = state.customers.filter(c => c.id !== id);
-                await DB.set('customers', state.customers);
-                renderCustomerTable();
-                updateDatalists();
-                renderDashboard(); // Update dashboard
-                showToast('Customer deleted.', 'success');
+            const customer = state.customers.find(c => c.id === id);
+            
+            // Check if customer has transactions
+            const customerTransactions = state.transactions.filter(t => t.customer === customer.name);
+            if (customerTransactions.length > 0) {
+                 if (!confirm('This customer has transactions. Deleting them will also delete all their transactions. Are you sure?')) {
+                    return;
+                 }
+                 // Filter out transactions for this customer
+                 state.transactions = state.transactions.filter(t => t.customer !== customer.name);
+                 await DB.set('transactions', state.transactions);
+            } else if (!confirm('Are you sure you want to delete this customer? This cannot be undone.')) {
+                return;
             }
+
+            // Delete the customer
+            state.customers = state.customers.filter(c => c.id !== id);
+            await DB.set('customers', state.customers);
+            
+            // Re-render everything
+            await updateCustomerAggregates(true);
+            renderCustomerTable();
+            updateDatalists();
+            renderDashboard();
+            renderTransactionTable(state.transactions);
+            showToast('Customer and all related transactions deleted.', 'success');
         }
     });
 

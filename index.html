@@ -166,6 +166,28 @@
             border-radius: 0.75rem; /* rounded-xl */
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
         }
+
+        /* Sub-tabs within a page */
+        .sub-tab-button {
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .sub-tab-button:hover {
+            color: var(--text-primary);
+        }
+        .sub-tab-button.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .sub-tab-content {
+            display: none;
+        }
+        .sub-tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body class="h-full flex">
@@ -257,80 +279,119 @@
         <!-- New Transaction Tab -->
         <div id="newTransaction" class="tab-content" style="display: none;">
             <h1 class="text-3xl font-bold mb-6 text-gray-800">Yeni İşlem</h1>
-            <form id="transaction-form" class="max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6 card p-6">
-                <!-- Data Lists for autocomplete -->
-                <datalist id="customer-list"></datalist>
-                <datalist id="product-list"></datalist>
 
-                <div>
-                    <label for="t-date" class="block text-sm font-medium text-gray-700 mb-1">Tarih</label>
-                    <input type="date" id="t-date" class="form-input" required>
-                </div>
-                <div>
-                    <label for="t-type" class="block text-sm font-medium text-gray-700 mb-1">Ödeme Yöntemi</label>
-                    <select id="t-type" class="form-select" required>
-                        <option value="VERESİYE">VERESİYE</option>
-                        <option value="SATIŞ">SATIŞ</option>
-                        <option value="İADE">İADE</option>
-                        <option value="İKİSİDE">İKİSİDE</option>
-                    </select>
-                </div>
-                
-                <div class="md:col-span-2">
-                    <label for="t-customer" class="block text-sm font-medium text-gray-700 mb-1">Müşteri İsmi</label>
-                    <input type="text" id="t-customer" class="form-input" list="customer-list" placeholder="Start typing..." required>
-                </div>
+            <!-- Data Lists for autocomplete -->
+            <datalist id="customer-list"></datalist>
+            <datalist id="product-list"></datalist>
 
-                <div class="md:col-span-2">
-                    <label for="t-product-name" class="block text-sm font-medium text-gray-700 mb-1">Ürün Çeşidi</label>
-                    <input type="text" id="t-product-name" class="form-input" list="product-list" placeholder="Start typing...">
-                </div>
-                <div>
-                    <label for="t-quantity" class="block text-sm font-medium text-gray-700 mb-1">Miktar</label>
-                    <input type="number" id="t-quantity" class="form-input" min="0" step="any" value="1">
-                </div>
-                <div>
-                    <label for="t-unit" class="block text-sm font-medium text-gray-700 mb-1">Birim</label>
-                    <select id="t-unit" class="form-select">
-                        <option value="TANE">TANE</option>
-                        <option value="ÇUVAL">ÇUVAL</option>
-                        <option value="KİLOGRAM">KİLOGRAM</option>
-                        <option value="KOVAN">KOVAN</option>
-                        <option value="TORBA">TORBA</option>
-                        <option value="DOLU">DOLU</option>
-                        <option value="TON">TON</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label for="t-product-type" class="block text-sm font-medium text-gray-700 mb-1">Ürün Çeşidi</label>
-                    <select id="t-product-type" class="form-select">
-                        <option value="İLAÇ">İLAÇ</option>
-                        <option value="GÜBRE">GÜBRE</option>
-                        <option value="KÖMÜR">KÖMÜR</option>
-                        <option value="TOHUM">TOHUM</option>
-                        <option value="FİDE">FİDE</option>
-                        <option value="ARI">ARI</option>
-                        <option value="DİĞER">DİĞER</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label for="t-price" class="block text-sm font-medium text-gray-700 mb-1">Birim Fiyat</label>
-                    <input type="number" id="t-price" class="form-input" min="0" step="any" placeholder="Auto-fills from product">
-                </div>
-                <div>
-                    <label for="t-total" class="block text-sm font-medium text-gray-700 mb-1">Toplam Fiyat</label>
-                    <input type="text" id="t-total" class="form-input bg-gray-100" placeholder="0.00 TL" readonly>
-                </div>
-                <div class="md:col-span-2 flex justify-end gap-4">
-                    <button type="button" class="btn btn-secondary" id="clear-form-btn">Clear</button>
-                    <button type="submit" class="btn btn-primary">
-                        <svg id="icon-save" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                        Save Transaction
+            <!-- Sub-tab navigation -->
+            <div class="border-b border-gray-200 mb-6">
+                <nav class="-mb-px flex gap-6" aria-label="Tabs">
+                    <button data-subtab="sale" class="sub-tab-button active">
+                        Ürün Satışı
                     </button>
-                </div>
-            </form>
+                    <button data-subtab="payment" class="sub-tab-button">
+                        Ödeme Al
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Sub-tab content for Product Sale -->
+            <div id="subtab-sale" class="sub-tab-content active">
+                <form id="transaction-form" class="max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6 card p-6">
+                    <div>
+                        <label for="t-date" class="block text-sm font-medium text-gray-700 mb-1">Tarih</label>
+                        <input type="date" id="t-date" class="form-input" required>
+                    </div>
+                    <div>
+                        <label for="t-type" class="block text-sm font-medium text-gray-700 mb-1">Ödeme Yöntemi</label>
+                        <select id="t-type" class="form-select" required>
+                            <option value="VERESİYE">VERESİYE</option>
+                            <option value="SATIŞ">SATIŞ</option>
+                        </select>
+                    </div>
+                    
+                    <div class="md:col-span-2">
+                        <label for="t-customer" class="block text-sm font-medium text-gray-700 mb-1">Müşteri İsmi</label>
+                        <input type="text" id="t-customer" class="form-input" list="customer-list" placeholder="Start typing..." required>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label for="t-product-name" class="block text-sm font-medium text-gray-700 mb-1">Ürün Çeşidi</label>
+                        <input type="text" id="t-product-name" class="form-input" list="product-list" placeholder="Start typing...">
+                    </div>
+                    <div>
+                        <label for="t-quantity" class="block text-sm font-medium text-gray-700 mb-1">Miktar</label>
+                        <input type="number" id="t-quantity" class="form-input" min="0" step="any" value="1">
+                    </div>
+                    <div>
+                        <label for="t-unit" class="block text-sm font-medium text-gray-700 mb-1">Birim</label>
+                        <select id="t-unit" class="form-select">
+                            <option value="TANE">TANE</option>
+                            <option value="ÇUVAL">ÇUVAL</option>
+                            <option value="KİLOGRAM">KİLOGRAM</option>
+                            <option value="KOVAN">KOVAN</option>
+                            <option value="TORBA">TORBA</option>
+                            <option value="DOLU">DOLU</option>
+                            <option value="TON">TON</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="t-product-type" class="block text-sm font-medium text-gray-700 mb-1">Ürün Çeşidi</label>
+                        <select id="t-product-type" class="form-select">
+                            <option value="İLAÇ">İLAÇ</option>
+                            <option value="GÜBRE">GÜBRE</option>
+                            <option value="KÖMÜR">KÖMÜR</option>
+                            <option value="TOHUM">TOHUM</option>
+                            <option value="FİDE">FİDE</option>
+                            <option value="ARI">ARI</option>
+                            <option value="DİĞER">DİĞER</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="t-price" class="block text-sm font-medium text-gray-700 mb-1">Birim Fiyat</label>
+                        <input type="number" id="t-price" class="form-input" min="0" step="any" placeholder="Auto-fills from product">
+                    </div>
+                    <div>
+                        <label for="t-total" class="block text-sm font-medium text-gray-700 mb-1">Toplam Fiyat</label>
+                        <input type="text" id="t-total" class="form-input bg-gray-100" placeholder="0.00 TL" readonly>
+                    </div>
+                    <div class="md:col-span-2 flex justify-end gap-4">
+                        <button type="button" class="btn btn-secondary" id="clear-form-btn">Temizle</button>
+                        <button type="submit" class="btn btn-primary">
+                            <svg id="icon-save" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                            Satışı Kaydet
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Sub-tab content for Payment -->
+            <div id="subtab-payment" class="sub-tab-content">
+                <form id="payment-form" class="max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-6 card p-6">
+                    <div>
+                        <label for="p-date" class="block text-sm font-medium text-gray-700 mb-1">Tarih</label>
+                        <input type="date" id="p-date" class="form-input" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="p-customer" class="block text-sm font-medium text-gray-700 mb-1">Müşteri İsmi</label>
+                        <input type="text" id="p-customer" class="form-input" list="customer-list" placeholder="Müşteri seç..." required>
+                    </div>
+                    <div>
+                        <label for="p-amount" class="block text-sm font-medium text-gray-700 mb-1">Ödeme Miktarı</label>
+                        <input type="number" id="p-amount" class="form-input" min="0" step="any" placeholder="0.00" required>
+                    </div>
+                    <div class="md:col-span-2 flex justify-end gap-4">
+                        <button type="button" class="btn btn-secondary" id="clear-payment-form-btn">Temizle</button>
+                        <button type="submit" class="btn btn-primary">
+                            <svg id="icon-dollar-sign" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                            Ödemeyi Kaydet
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
         
         <!-- Search Transactions Tab -->
@@ -348,8 +409,7 @@
                         <option value="">Hepsi</option>
                         <option value="VERESİYE">VERESİYE</option>
                         <option value="SATIŞ">SATIŞ</option>
-                        <option value="İADE">İADE</option>
-                        <option value="İKİSİDE">İKİSİDE</option>
+                        <option value="ÖDEME">ÖDEME</option>
                     </select>
                 </div>
                 <div>
@@ -366,8 +426,8 @@
                     </select>
                 </div>
                 <div class="flex items-end gap-2">
-                    <button id="filter-btn" class="btn btn-primary w-full">Search</button>
-                    <button id="reset-filter-btn" class="btn btn-secondary w-full">Reset</button>
+                    <button id="filter-btn" class="btn btn-primary w-full">Ara</button>
+                    <button id="reset-filter-btn" class="btn btn-secondary w-full">Sıfırla</button>
                 </div>
             </div>
 
@@ -555,7 +615,7 @@
                     </select>
                 </div>
 
-                <div>
+                <div class="mb-4">
                     <label for="edit-p-unit" class="block text-sm font-medium text-gray-700 mb-1">Birim</label>
                     <select id="edit-p-unit" class="form-select">
                         <option value="TANE">TANE</option>

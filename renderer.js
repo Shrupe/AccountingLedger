@@ -33,6 +33,7 @@ let state = {
     products: []
 };
 let currentTab = 'dashboard';
+let currentSort = { field: 'name', direction: 'asc' }; // For customer sorting
 
 // --- UTILITY FUNCTIONS ---
 
@@ -44,29 +45,20 @@ function replaceIcons() {
     if (window.lucide) {
         document.querySelectorAll('[id^="icon-"]').forEach(el => {
             const iconName = el.id.replace('icon-', '');
-            // Convert kebab-case (e.g., package-plus) to PascalCase (e.g., PackagePlus)
             const iconPascal = iconName.charAt(0).toUpperCase() + iconName.slice(1).replace(/-(\w)/g, (m, g) => g.toUpperCase());
             
             if (window.lucide[iconPascal]) {
                 const svg = window.lucide.createElement(window.lucide[iconPascal]);
-                
-                // Copy all attributes from placeholder (class, width, height, etc.)
                 for (const attr of el.attributes) {
                     if (attr.name !== 'id') {
                         svg.setAttribute(attr.name, attr.value);
                     }
                 }
-                
-                // Set default size if not provided
                 if (!svg.getAttribute('width')) svg.setAttribute('width', '18');
                 if (!svg.getAttribute('height')) svg.setAttribute('height', '18');
-                
-                // Check if element is still in the DOM before replacing
                 if (el.parentNode) {
                     el.parentNode.replaceChild(svg, el);
                 }
-            } else {
-                // console.warn(`Lucide icon not found: ${iconPascal}`);
             }
         });
     }
@@ -96,7 +88,6 @@ function showToast(message, type = 'success') {
     
     toastMessage.textContent = message;
     
-    // Set color
     toast.classList.remove('bg-green-500', 'bg-red-500');
     if (type === 'error') {
         toast.classList.add('bg-red-500');
@@ -104,13 +95,34 @@ function showToast(message, type = 'success') {
         toast.classList.add('bg-green-500');
     }
     
-    // Show toast
     toast.style.transform = 'translateX(0)';
-    
-    // Hide after 3 seconds
     setTimeout(() => {
         toast.style.transform = 'translateX(calc(100% + 2rem))';
     }, 3000);
+}
+
+/**
+ * Exports data to a CSV file and triggers download
+ * @param {Array} data - Array of objects to export
+ * @param {string} filename - Name of the file
+ */
+function exportToCSV(data, filename) {
+    if (!data || data.length === 0) {
+        showToast('No data to export', 'error');
+        return;
+    }
+    
+    const csv = Papa.unparse(data);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 // --- NAVIGATION ---
@@ -129,17 +141,15 @@ function showTab(tabId) {
     
     currentTab = tabId;
     
-    // Refresh data when switching to a tab
     if (tabId === 'dashboard') renderDashboard();
     if (tabId === 'transactions') renderTransactionTable(state.transactions);
     if (tabId === 'customers') renderCustomerTable();
     if (tabId === 'products') renderProductTable();
 
-    // Reset new transaction page sub-tabs
     if (tabId === 'newTransaction') {
         document.getElementById('p-date').value = getTodayDate();
         document.getElementById('t-date').value = getTodayDate();
-        showSubTab('sale'); // Default to sale tab
+        showSubTab('sale'); 
     }
 }
 
@@ -169,39 +179,29 @@ subTabButtons.forEach(button => {
 
 // --- DATA RENDERING ---
 
-/**
- * Loads all initial data from files and renders the dashboard
- */
 async function loadInitialData() {
     state.transactions = await DB.get('transactions');
     state.customers = await DB.get('customers');
     state.products = await DB.get('products');
     
-    // Recompute and persist per-customer aggregates (veresiye/satis)
     await updateCustomerAggregates(true);
 
     renderDashboard();
     updateDatalists();
     
-    // Set default date for new transaction
     document.getElementById('t-date').value = getTodayDate();
     document.getElementById('p-date').value = getTodayDate();
     
-    // Show import tab if no data
     if (state.transactions.length === 0 && state.products.length === 0) {
         showTab('import');
     }
 }
 
-/**
- * Updates the dashboard with current stats
- */
 function renderDashboard() {
     let totalTransactions = state.transactions.length;
     let totalCredit = 0;
     let totalSales = 0;
 
-    // Build per-customer aggregates from state.customers when available
     const customerAggregates = {};
     state.customers.forEach(c => {
         const veresiye = c.veresiye || 0;
@@ -211,7 +211,6 @@ function renderDashboard() {
         totalSales += satis;
     });
 
-    // Fallback: if no customer aggregates exist, compute from transactions
     if (Object.keys(customerAggregates).length === 0) {
         state.transactions.forEach(t => {
             if (!customerAggregates[t.customer]) customerAggregates[t.customer] = { veresiye: 0, satis: 0 };
@@ -231,26 +230,24 @@ function renderDashboard() {
     document.getElementById('total-sales').textContent = formatCurrency(totalSales);
     document.getElementById('total-customers').textContent = state.customers.length;
 
-    // Add Net Balance calculation
     const netBalance = totalSales - totalCredit;
     const netBalanceEl = document.getElementById('net-balance');
     netBalanceEl.textContent = formatCurrency(netBalance);
-    // Clear previous color classes
     netBalanceEl.classList.remove('text-red-600', 'text-green-600', 'text-gray-800');
     if (netBalance > 0) {
-        netBalanceEl.classList.add('text-green-600'); // More sales than credit
+        netBalanceEl.classList.add('text-green-600'); 
     } else if (netBalance < 0) {
-        netBalanceEl.classList.add('text-red-600'); // More credit than sales
+        netBalanceEl.classList.add('text-red-600'); 
     } else {
-        netBalanceEl.classList.add('text-gray-800'); // Balanced
+        netBalanceEl.classList.add('text-gray-800'); 
     }
     
     const balanceBody = document.getElementById('customer-balances-table');
-    balanceBody.innerHTML = ''; // Clear old data
+    balanceBody.innerHTML = ''; 
     Object.keys(customerAggregates).forEach(customerName => {
         const ag = customerAggregates[customerName] || { veresiye: 0, satis: 0 };
         const total = (ag.veresiye || 0) + (ag.satis || 0);
-        const netDebt = (ag.veresiye || 0) - (ag.satis || 0); // Positive means debt
+        const netDebt = (ag.veresiye || 0) - (ag.satis || 0);
 
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -270,10 +267,6 @@ function renderDashboard() {
     });
 }
 
-/**
- * Recompute per-customer veresiye/satis aggregates from transactions and persist to customers file if desired.
- * If saveToDB is true, writes updated `state.customers` to disk.
- */
 async function updateCustomerAggregates(saveToDB = false) {
     const aggregates = {};
     state.transactions.forEach(t => {
@@ -287,25 +280,21 @@ async function updateCustomerAggregates(saveToDB = false) {
         }
     });
 
-    // Map existing customers by name
     const map = {};
     state.customers.forEach(c => map[c.name] = c);
 
-    // Update existing customers or add missing ones
     Object.keys(aggregates).forEach(name => {
         const a = aggregates[name];
         if (map[name]) {
             map[name].veresiye = a.veresiye;
             map[name].satis = a.satis;
         } else {
-            // New customer found in transactions, add to state
             const newCustomer = { id: DB.generateId(), name, phone: '', veresiye: a.veresiye, satis: a.satis };
             state.customers.push(newCustomer);
-            map[name] = newCustomer; // Add to map for next loop
+            map[name] = newCustomer; 
         }
     });
 
-    // Ensure all customers have numeric fields
     state.customers.forEach(c => {
         if (typeof c.veresiye !== 'number') c.veresiye = 0;
         if (typeof c.satis !== 'number') c.satis = 0;
@@ -316,9 +305,6 @@ async function updateCustomerAggregates(saveToDB = false) {
     }
 }
 
-/**
- * Updates the autocomplete <datalist> for customers and products
- */
 function updateDatalists() {
     const customerList = document.getElementById('customer-list');
     customerList.innerHTML = '';
@@ -345,7 +331,6 @@ const tPrice = document.getElementById('t-price');
 const tTotal = document.getElementById('t-total');
 const tProductName = document.getElementById('t-product-name');
 
-// Auto-calculate total
 function calculateTotal() {
     const quantity = parseFloat(tQuantity.value) || 0;
     const price = parseFloat(tPrice.value) || 0;
@@ -355,13 +340,11 @@ function calculateTotal() {
 tQuantity.addEventListener('input', calculateTotal);
 tPrice.addEventListener('input', calculateTotal);
 
-// Auto-fill price when product is selected
 tProductName.addEventListener('change', () => {
     const productName = tProductName.value.trim();
     const product = state.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
     if (product) {
         tPrice.value = product.price;
-        // Auto-fill unit and product type similar to price autofill
         try {
             const tUnitEl = document.getElementById('t-unit');
             if (tUnitEl && product.unit) tUnitEl.value = product.unit;
@@ -371,7 +354,6 @@ tProductName.addEventListener('change', () => {
         } catch (err) {
             console.warn('Auto-fill for unit/product-type failed:', err);
         }
-
         calculateTotal();
     }
 });
@@ -404,7 +386,7 @@ transactionForm.addEventListener('submit', async (e) => {
     };
 
     if (!newTransaction.date || !newTransaction.customer || !newTransaction.productName || !newTransaction.quantity || !newTransaction.price) {
-        showToast('Please fill in all required fields (Date, Customer, Product, Quantity, Price).', 'error');
+        showToast('Please fill in all required fields.', 'error');
         return;
     }
 
@@ -414,15 +396,13 @@ transactionForm.addEventListener('submit', async (e) => {
     if (saved) {
         showToast('Transaction saved!', 'success');
         transactionForm.reset();
-        document.getElementById('t-date').value = getTodayDate(); // Reset date
-        // Recompute customer aggregates and persist
+        document.getElementById('t-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
-        updateDatalists(); // Update customer list in case of new customer
-        renderDashboard(); // Update dashboard
-        renderTransactionTable(state.transactions); // Update search table
+        updateDatalists(); 
+        renderDashboard(); 
+        renderTransactionTable(state.transactions); 
     } else {
         showToast('Failed to save transaction.', 'error');
-        // Rollback state if save failed
         state.transactions.pop();
     }
 });
@@ -446,7 +426,7 @@ paymentForm.addEventListener('submit', async (e) => {
         id: DB.generateId(),
         date: paymentDate,
         customer: customerName,
-        type: 'ÖDEME', // New type
+        type: 'ÖDEME', 
         productType: '-',
         productName: 'Ödeme',
         quantity: 1,
@@ -461,15 +441,13 @@ paymentForm.addEventListener('submit', async (e) => {
     if (saved) {
         showToast('Payment saved!', 'success');
         paymentForm.reset();
-        document.getElementById('p-date').value = getTodayDate(); // Reset date
-        // Recompute customer aggregates and persist
+        document.getElementById('p-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
-        updateDatalists(); // Update customer list in case of new customer
-        renderDashboard(); // Update dashboard
-        renderTransactionTable(state.transactions); // Update search table
+        updateDatalists(); 
+        renderDashboard(); 
+        renderTransactionTable(state.transactions); 
     } else {
         showToast('Failed to save payment.', 'error');
-        // Rollback state if save failed
         state.transactions.pop();
     }
 });
@@ -534,7 +512,6 @@ function renderTransactionTable(transactions) {
         tableBody.appendChild(row);
     });
 
-    // Replace icons after rendering
     replaceIcons();
 }
 
@@ -546,7 +523,6 @@ filterBtn.addEventListener('click', () => {
     const filtered = state.transactions.filter(t => {
         const customerMatch = t.customer.toLowerCase().includes(fCustomer);
         const typeMatch = !fType || t.type === fType;
-        // Payment transactions won't match product type, which is good
         const productTypeMatch = !fProductType || t.productType === fProductType;
         return customerMatch && typeMatch && productTypeMatch;
     });
@@ -568,11 +544,35 @@ const customerForm = document.getElementById('customer-form');
 function renderCustomerTable() {
     const tableBody = document.getElementById('customer-table-body');
     tableBody.innerHTML = '';
+    
+    // Sort logic
+    state.customers.sort((a, b) => {
+        let valA = (a[currentSort.field] || '').toString().toLowerCase();
+        let valB = (b[currentSort.field] || '').toString().toLowerCase();
+        
+        // Combine address fields for sorting if sorting by address
+        if (currentSort.field === 'address') {
+            valA = `${a.city || ''} ${a.district || ''} ${a.street || ''}`.trim().toLowerCase();
+            valB = `${b.city || ''} ${b.district || ''} ${b.street || ''}`.trim().toLowerCase();
+        }
+
+        if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
     state.customers.forEach(c => {
+        const address = `${c.city || ''} ${c.district || ''} ${c.street || ''}`.trim() || '-';
+        const dob = c.dob || '-';
+        const tc = c.tc || '-';
+        
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${c.name}</td>
+            <td>${tc}</td>
+            <td>${dob}</td>
             <td>${c.phone || '-'}</td>
+            <td>${address}</td>
             <td class="flex gap-2">
                 <button class="btn btn-danger btn-delete-customer" data-id="${c.id}">
                     <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -582,7 +582,6 @@ function renderCustomerTable() {
         tableBody.appendChild(row);
     });
 
-    // Replace icons after rendering
     replaceIcons();
 }
 
@@ -590,19 +589,28 @@ customerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('c-name').value.trim();
     const phone = document.getElementById('c-phone').value.trim();
+    const tc = document.getElementById('c-id').value.trim();
+    const dob = document.getElementById('c-dob').value;
+    const city = document.getElementById('c-city').value.trim();
+    const district = document.getElementById('c-district').value.trim();
+    const street = document.getElementById('c-street').value.trim();
     
     if (!name) {
         showToast('Customer name is required.', 'error');
         return;
     }
     
-    // Check if customer already exists
     if (state.customers.find(c => c.name.toLowerCase() === name.toLowerCase())) {
         showToast('Customer with this name already exists.', 'error');
         return;
     }
 
-    const newCustomer = { id: DB.generateId(), name, phone, veresiye: 0, satis: 0 };
+    const newCustomer = { 
+        id: DB.generateId(), 
+        name, phone, tc, dob, city, district, street,
+        veresiye: 0, satis: 0 
+    };
+    
     state.customers.push(newCustomer);
     await DB.set('customers', state.customers);
     
@@ -638,7 +646,6 @@ function renderProductTable() {
         tableBody.appendChild(row);
     });
 
-    // Replace icons after rendering
     replaceIcons();
 }
 
@@ -687,8 +694,8 @@ importBtn.addEventListener('click', async () => {
             productName: row['ÇEŞİT'] || 'Bilinmeyen Ürün',
             quantity: parseFloat(row['MİKTAR']) || 1,
             unit: row['ADET'] || 'TANE',
-            price: parseFloat(row['FİYAT']) || 0, // Assuming price isn't in this CSV
-            total: parseFloat(row['TOPLAM']) || 0 // Assuming total isn't in this CSV
+            price: parseFloat(row['FİYAT']) || 0, 
+            total: parseFloat(row['TOPLAM']) || 0 
         }));
     } catch (e) {
         showToast(`Error parsing transactions: ${e.message}`, 'error');
@@ -703,17 +710,15 @@ importBtn.addEventListener('click', async () => {
             name: row['ÜRÜN ADI'] || row['İLAÇ ADI'] || row['GÜBRE ADI'] || 'Bilinmeyen Ürün',
             type: (row['İLAÇ ADI'] ? 'İLAÇ' : (row['GÜBRE ADI'] ? 'GÜBRE' : 'DİĞER')),
             price: parseFloat(row['FİYAT']) || 0
-        })).filter(p => p.price > 0 && p.name !== 'Bilinmeyen Ürün'); // Filter out bad data
+        })).filter(p => p.price > 0 && p.name !== 'Bilinmeyen Ürün'); 
     } catch (e) {
         showToast(`Error parsing products: ${e.message}`, 'error');
         return;
     }
     
-    // Save to state and DB
     state.transactions = importedTransactions;
     state.products = importedProducts;
     
-    // Also extract customers from transactions
     const customerNames = new Set(importedTransactions.map(t => t.customer));
     state.customers = [...customerNames].map(name => ({ id: DB.generateId(), name, phone: '' }));
     
@@ -722,19 +727,17 @@ importBtn.addEventListener('click', async () => {
     await DB.set('customers', state.customers);
     
     showToast('Data imported successfully!', 'success');
-    loadInitialData(); // Reload all data from files
-    showTab('dashboard'); // Switch to dashboard
+    loadInitialData(); 
+    showTab('dashboard'); 
 });
 
 
 // --- GLOBAL EVENT LISTENERS ---
-// This needs to run *after* the main HTML document is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    // We must wait for Lucide to load from the CDN
     const iconInterval = setInterval(() => {
         if (window.lucide) {
             clearInterval(iconInterval);
-            replaceIcons(); // Initial icon replacement
+            replaceIcons(); 
         }
     }, 100);
 
@@ -742,26 +745,77 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.tab-button').forEach(button => {
         button.addEventListener('click', () => {
             const tabId = button.getAttribute('data-tab');
-            if (tabId) {
-                showTab(tabId);
-            }
+            if (tabId) showTab(tabId);
         });
     });
 
-    // --- Clear Transaction Form button
+    // --- Customer Table Sorting
+    document.querySelectorAll('#customers th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const field = th.getAttribute('data-sort');
+            if (currentSort.field === field) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.direction = 'asc';
+            }
+            renderCustomerTable();
+        });
+    });
+
+    // --- Export Buttons
+    document.getElementById('export-transactions-btn').addEventListener('click', () => {
+        const exportData = state.transactions.map(t => ({
+            Date: t.date,
+            Customer: t.customer,
+            Type: t.type,
+            ProductType: t.productType,
+            ProductName: t.productName,
+            Quantity: t.quantity,
+            Unit: t.unit,
+            Price: t.price,
+            Total: t.total
+        }));
+        exportToCSV(exportData, `transactions_${getTodayDate()}.csv`);
+    });
+
+    document.getElementById('export-customers-btn').addEventListener('click', () => {
+        const exportData = state.customers.map(c => ({
+            Name: c.name,
+            TC_ID: c.tc || '',
+            DOB: c.dob || '',
+            Phone: c.phone || '',
+            City: c.city || '',
+            District: c.district || '',
+            Street: c.street || '',
+            TotalDebt: c.veresiye,
+            TotalPaid: c.satis
+        }));
+        exportToCSV(exportData, `customers_${getTodayDate()}.csv`);
+    });
+
+    document.getElementById('export-products-btn').addEventListener('click', () => {
+        const exportData = state.products.map(p => ({
+            Name: p.name,
+            Type: p.type,
+            Unit: p.unit,
+            Price: p.price
+        }));
+        exportToCSV(exportData, `products_${getTodayDate()}.csv`);
+    });
+
+
+    // --- Clear Forms
     document.getElementById('clear-form-btn').addEventListener('click', () => {
         document.getElementById('transaction-form').reset();
         document.getElementById('t-date').value = getTodayDate();
     });
-    // --- Clear Payment Form button
     document.getElementById('clear-payment-form-btn').addEventListener('click', () => {
         document.getElementById('payment-form').reset();
         document.getElementById('p-date').value = getTodayDate();
     });
 
-    // --- Event Delegation for Delete Buttons ---
-    
-    // Transaction table
+    // --- Delete Handlers
     document.getElementById('transaction-table-body').addEventListener('click', async (e) => {
         const deleteButton = e.target.closest('.btn-delete-transaction');
         if (deleteButton) {
@@ -769,53 +823,45 @@ document.addEventListener('DOMContentLoaded', () => {
             if (confirm('Are you sure you want to delete this transaction?')) {
                 state.transactions = state.transactions.filter(t => t.id !== id);
                 await DB.set('transactions', state.transactions);
-                // Recompute customer aggregates and persist after deletion
                 await updateCustomerAggregates(true);
                 updateDatalists();
                 renderTransactionTable(state.transactions);
-                renderDashboard(); // Update dashboard
+                renderDashboard(); 
                 showToast('Transaction deleted.', 'success');
             }
         }
     });
 
-    // Customer table
     document.getElementById('customer-table-body').addEventListener('click', async (e) => {
         const deleteButton = e.target.closest('.btn-delete-customer');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
             const customer = state.customers.find(c => c.id === id);
             
-            // Check if customer has transactions
             const customerTransactions = state.transactions.filter(t => t.customer === customer.name);
             if (customerTransactions.length > 0) {
                  if (!confirm('This customer has transactions. Deleting them will also delete all their transactions. Are you sure?')) {
                     return;
                  }
-                 // Filter out transactions for this customer
                  state.transactions = state.transactions.filter(t => t.customer !== customer.name);
                  await DB.set('transactions', state.transactions);
             } else if (!confirm('Are you sure you want to delete this customer? This cannot be undone.')) {
                 return;
             }
 
-            // Delete the customer
             state.customers = state.customers.filter(c => c.id !== id);
             await DB.set('customers', state.customers);
             
-            // Re-render everything
             await updateCustomerAggregates(true);
             renderCustomerTable();
             updateDatalists();
             renderDashboard();
             renderTransactionTable(state.transactions);
-            showToast('Customer and all related transactions deleted.', 'success');
+            showToast('Customer deleted.', 'success');
         }
     });
 
-    // Product table (Handles Edit AND Delete)
     document.getElementById('product-table-body').addEventListener('click', async (e) => {
-        // Check for delete
         const deleteButton = e.target.closest('.btn-delete-product');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
@@ -826,10 +872,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateDatalists();
                 showToast('Product deleted.', 'success');
             }
-            return; // Stop further execution
+            return; 
         }
         
-        // Check for edit
         const editButton = e.target.closest('.btn-edit-product');
         if (editButton) {
             const id = editButton.getAttribute('data-id');
@@ -845,18 +890,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
     // --- Product Edit Modal Listeners ---
     const editModal = document.getElementById('edit-product-modal');
     const editForm = document.getElementById('edit-product-form');
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
 
-    // Close modal
     cancelEditBtn.addEventListener('click', () => {
         editModal.style.display = 'none';
     });
 
-    // Save changes from modal
     editForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('edit-p-id').value;
@@ -882,8 +924,5 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Product updated!', 'success');
     });
 
-
-    // Load initial data from JSON files
     loadInitialData();
 });
-

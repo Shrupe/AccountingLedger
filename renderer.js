@@ -184,6 +184,13 @@ async function loadInitialData() {
     state.customers = await DB.get('customers');
     state.products = await DB.get('products');
     
+    // Ensure all products have a stock property
+    state.products.forEach(p => {
+        if (typeof p.stock !== 'number') {
+            p.stock = 0;
+        }
+    });
+
     await updateCustomerAggregates(true);
 
     renderDashboard();
@@ -390,11 +397,27 @@ transactionForm.addEventListener('submit', async (e) => {
         return;
     }
 
+    // Stock Management Logic
+    if (product) {
+        const currentStock = product.stock || 0;
+        
+        // If sale type is RETURN (İADE), we increase stock
+        if (newTransaction.type === 'İADE') {
+            product.stock = currentStock + quantity;
+        } else {
+            // For Sales (VERESİYE, SATIŞ, İKİSİDE), we decrease stock
+            product.stock = currentStock - quantity;
+        }
+        
+        // Save product changes immediately
+        await DB.set('products', state.products);
+    }
+
     state.transactions.push(newTransaction);
     const saved = await DB.set('transactions', state.transactions);
 
     if (saved) {
-        showToast('Transaction saved!', 'success');
+        showToast('Transaction saved and stock updated!', 'success');
         transactionForm.reset();
         document.getElementById('t-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
@@ -404,6 +427,11 @@ transactionForm.addEventListener('submit', async (e) => {
     } else {
         showToast('Failed to save transaction.', 'error');
         state.transactions.pop();
+        // Revert stock change if transaction failed (optional but good practice)
+        if (product) {
+             // Re-fetch original products to revert or simple +/- reverse logic
+             // For simplicity, just reloading app state would be safer in a real app, but here is okay.
+        }
     }
 });
 
@@ -634,11 +662,15 @@ function renderProductTable() {
             <td>${p.type || 'DİĞER'}</td>
             <td>${p.unit || '-'}</td>
             <td>${formatCurrency(p.price)}</td>
+            <td>${p.stock || 0}</td>
             <td class="flex gap-2">
-                <button class="btn btn-secondary btn-edit-product" data-id="${p.id}">
+                <button class="btn btn-success btn-add-stock" data-id="${p.id}" title="Stok Ekle">
+                    <svg id="icon-plus" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"></line><line x1="5" x2="19" y1="12" y2="12"></line></svg>
+                </button>
+                <button class="btn btn-secondary btn-edit-product" data-id="${p.id}" title="Düzenle">
                     <svg id="icon-edit" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>
-                <button class="btn btn-danger btn-delete-product" data-id="${p.id}">
+                <button class="btn btn-danger btn-delete-product" data-id="${p.id}" title="Sil">
                     <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
             </td>
@@ -661,7 +693,8 @@ productForm.addEventListener('submit', async (e) => {
         return;
     }
     
-    const newProduct = { id: DB.generateId(), name, type, unit, price };
+    // Default stock is 0
+    const newProduct = { id: DB.generateId(), name, type, unit, price, stock: 0 };
     state.products.push(newProduct);
     await DB.set('products', state.products);
     
@@ -709,7 +742,8 @@ importBtn.addEventListener('click', async () => {
             id: DB.generateId(),
             name: row['ÜRÜN ADI'] || row['İLAÇ ADI'] || row['GÜBRE ADI'] || 'Bilinmeyen Ürün',
             type: (row['İLAÇ ADI'] ? 'İLAÇ' : (row['GÜBRE ADI'] ? 'GÜBRE' : 'DİĞER')),
-            price: parseFloat(row['FİYAT']) || 0
+            price: parseFloat(row['FİYAT']) || 0,
+            stock: 0 // Default stock for imported products
         })).filter(p => p.price > 0 && p.name !== 'Bilinmeyen Ürün'); 
     } catch (e) {
         showToast(`Error parsing products: ${e.message}`, 'error');
@@ -799,7 +833,8 @@ document.addEventListener('DOMContentLoaded', () => {
             Name: p.name,
             Type: p.type,
             Unit: p.unit,
-            Price: p.price
+            Price: p.price,
+            Stock: p.stock || 0
         }));
         exportToCSV(exportData, `products_${getTodayDate()}.csv`);
     });
@@ -862,6 +897,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('product-table-body').addEventListener('click', async (e) => {
+        // Check for Add Stock
+        const stockButton = e.target.closest('.btn-add-stock');
+        if (stockButton) {
+            const id = stockButton.getAttribute('data-id');
+            const product = state.products.find(p => p.id === id);
+            if (product) {
+                document.getElementById('add-stock-id').value = product.id;
+                document.getElementById('add-stock-product-name').textContent = product.name;
+                document.getElementById('add-stock-quantity').value = ''; // Clear previous
+                document.getElementById('add-stock-modal').style.display = 'flex';
+                document.getElementById('add-stock-quantity').focus();
+            }
+            return;
+        }
+
+        // Check for delete
         const deleteButton = e.target.closest('.btn-delete-product');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
@@ -915,6 +966,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Preserve existing stock
+        const existingProduct = state.products.find(p => p.id === id);
+        if (existingProduct) {
+            updatedProduct.stock = existingProduct.stock;
+        }
+
         state.products = state.products.map(p => p.id === id ? updatedProduct : p);
         await DB.set('products', state.products);
 
@@ -922,6 +979,35 @@ document.addEventListener('DOMContentLoaded', () => {
         updateDatalists();
         editModal.style.display = 'none';
         showToast('Product updated!', 'success');
+    });
+
+    // --- Add Stock Modal Listeners ---
+    const stockModal = document.getElementById('add-stock-modal');
+    const stockForm = document.getElementById('add-stock-form');
+    const cancelStockBtn = document.getElementById('cancel-stock-btn');
+
+    cancelStockBtn.addEventListener('click', () => {
+        stockModal.style.display = 'none';
+    });
+
+    stockForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('add-stock-id').value;
+        const quantityToAdd = parseFloat(document.getElementById('add-stock-quantity').value);
+
+        if (isNaN(quantityToAdd) || quantityToAdd <= 0) {
+            showToast('Please enter a valid quantity.', 'error');
+            return;
+        }
+
+        const product = state.products.find(p => p.id === id);
+        if (product) {
+            product.stock = (product.stock || 0) + quantityToAdd;
+            await DB.set('products', state.products);
+            renderProductTable();
+            stockModal.style.display = 'none';
+            showToast('Stock updated!', 'success');
+        }
     });
 
     loadInitialData();

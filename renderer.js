@@ -38,30 +38,13 @@ let currentSort = { field: 'name', direction: 'asc' }; // For customer sorting
 // --- UTILITY FUNCTIONS ---
 
 /**
- * Replaces all placeholder icon elements with actual Lucide SVG icons.
- * This needs to be called after any dynamic content is rendered.
+ * Replaces all placeholder icon elements with actual SVG icons.
+ * Since we already have inline SVGs in HTML, this is mainly for verification.
  */
 function replaceIcons() {
-    if (window.lucide) {
-        document.querySelectorAll('[id^="icon-"]').forEach(el => {
-            const iconName = el.id.replace('icon-', '');
-            const iconPascal = iconName.charAt(0).toUpperCase() + iconName.slice(1).replace(/-(\w)/g, (m, g) => g.toUpperCase());
-            
-            if (window.lucide[iconPascal]) {
-                const svg = window.lucide.createElement(window.lucide[iconPascal]);
-                for (const attr of el.attributes) {
-                    if (attr.name !== 'id') {
-                        svg.setAttribute(attr.name, attr.value);
-                    }
-                }
-                if (!svg.getAttribute('width')) svg.setAttribute('width', '18');
-                if (!svg.getAttribute('height')) svg.setAttribute('height', '18');
-                if (el.parentNode) {
-                    el.parentNode.replaceChild(svg, el);
-                }
-            }
-        });
-    }
+    // Icons are already embedded as inline SVGs in the HTML
+    // This function is kept for compatibility
+    return;
 }
 
 /**
@@ -73,10 +56,34 @@ function formatCurrency(value) {
 }
 
 /**
+ * Formats a date string from YYYY-MM-DD to DD/MM/YYYY
+ */
+function formatDateDisplay(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString; // fallback if invalid
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+}
+
+/**
  * Gets today's date in YYYY-MM-DD format
  */
 function getTodayDate() {
     return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Gets today's date in DD-MM-YYYY format for filenames
+ */
+function getTodayDateFilename() {
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    return `${day}-${month}-${year}`;
 }
 
 /**
@@ -102,27 +109,61 @@ function showToast(message, type = 'success') {
 }
 
 /**
+ * Waits for PapaParse to load and resolves when ready
+ */
+function waitForPapa(timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        const checkPapa = () => {
+            if (typeof Papa !== 'undefined' && Papa.unparse) {
+                resolve();
+            } else if (Date.now() - startTime > timeout) {
+                reject(new Error('PapaParse library failed to load'));
+            } else {
+                setTimeout(checkPapa, 100);
+            }
+        };
+        checkPapa();
+    });
+}
+
+/**
  * Exports data to a CSV file and triggers download
  * @param {Array} data - Array of objects to export
  * @param {string} filename - Name of the file
  */
 function exportToCSV(data, filename) {
-    if (!data || data.length === 0) {
-        showToast('No data to export', 'error');
-        return;
+    try {
+        if (!data || data.length === 0) {
+            showToast('No data to export', 'error');
+            return;
+        }
+        
+        if (typeof Papa === 'undefined') {
+            showToast('CSV library is loading... Please try again in a moment.', 'error');
+            return;
+        }
+        
+        const csv = '\uFEFF' + Papa.unparse(data);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up the URL object
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+        
+        showToast(`Exported as ${filename}`, 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast(`Export failed: ${error.message}`, 'error');
     }
-    
-    const csv = Papa.unparse(data);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
 }
 
 // --- NAVIGATION ---
@@ -405,12 +446,22 @@ transactionForm.addEventListener('submit', async (e) => {
         if (newTransaction.type === 'İADE') {
             product.stock = currentStock + quantity;
         } else {
+            // Check stock sufficiency for sales
+            if (currentStock < quantity) {
+                showToast('Stokta bu ürün mevcut değil!', 'error');
+                return;
+            }
             // For Sales (VERESİYE, SATIŞ, İKİSİDE), we decrease stock
             product.stock = currentStock - quantity;
         }
         
         // Save product changes immediately
         await DB.set('products', state.products);
+    } else {
+        if (!product) {
+            showToast('Ürün bulunamadı!', 'error'); 
+            return; 
+        }
     }
 
     state.transactions.push(newTransaction);
@@ -429,8 +480,8 @@ transactionForm.addEventListener('submit', async (e) => {
         state.transactions.pop();
         // Revert stock change if transaction failed (optional but good practice)
         if (product) {
-             // Re-fetch original products to revert or simple +/- reverse logic
-             // For simplicity, just reloading app state would be safer in a real app, but here is okay.
+             // To properly revert, we'd need to re-fetch or undo the logic above.
+             // Since failures here are rare (file write errors), simple notification is okay for now.
         }
     }
 });
@@ -496,15 +547,15 @@ function renderTransactionTable(transactions) {
         noTransactionsEl.style.display = 'none';
     }
 
-    // Sort by date, newest first
-    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Sort by date, oldest first
+    transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     transactions.forEach(t => {
         const row = document.createElement('tr');
         
         if (t.type === 'ÖDEME') {
             row.innerHTML = `
-                <td>${t.date}</td>
+                <td>${formatDateDisplay(t.date)}</td>
                 <td>${t.customer}</td>
                 <td><span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">${t.type}</span></td>
                 <td>-</td>
@@ -521,7 +572,7 @@ function renderTransactionTable(transactions) {
             `;
         } else {
              row.innerHTML = `
-                <td>${t.date}</td>
+                <td>${formatDateDisplay(t.date)}</td>
                 <td>${t.customer}</td>
                 <td>${t.type}</td>
                 <td>${t.productType}</td>
@@ -591,7 +642,7 @@ function renderCustomerTable() {
 
     state.customers.forEach(c => {
         const address = `${c.city || ''} ${c.district || ''} ${c.street || ''}`.trim() || '-';
-        const dob = c.dob || '-';
+        const dob = formatDateDisplay(c.dob);
         const tc = c.tc || '-';
         
         const row = document.createElement('tr');
@@ -767,13 +818,27 @@ importBtn.addEventListener('click', async () => {
 
 
 // --- GLOBAL EVENT LISTENERS ---
-document.addEventListener('DOMContentLoaded', () => {
-    const iconInterval = setInterval(() => {
-        if (window.lucide) {
-            clearInterval(iconInterval);
-            replaceIcons(); 
+document.addEventListener('DOMContentLoaded', async () => {
+    // Verify that PapaParse is loaded
+    let papaReady = false;
+    const maxWaitTime = 10000; // 10 seconds
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+        if (typeof Papa !== 'undefined') {
+            papaReady = true;
+            break;
         }
-    }, 100);
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    if (!papaReady) {
+        console.warn('PapaParse library failed to load in time');
+        console.error('PapaParse library did not load');
+    }
+    
+    // Call replaceIcons for any dynamically created SVG placeholders
+    replaceIcons();
 
     // --- Tab navigation
     document.querySelectorAll('.tab-button').forEach(button => {
@@ -798,46 +863,82 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Export Buttons
-    document.getElementById('export-transactions-btn').addEventListener('click', () => {
-        const exportData = state.transactions.map(t => ({
-            Date: t.date,
-            Customer: t.customer,
-            Type: t.type,
-            ProductType: t.productType,
-            ProductName: t.productName,
-            Quantity: t.quantity,
-            Unit: t.unit,
-            Price: t.price,
-            Total: t.total
-        }));
-        exportToCSV(exportData, `transactions_${getTodayDate()}.csv`);
-    });
+    const exportTransactionsBtn = document.getElementById('export-transactions-btn');
+    if (exportTransactionsBtn) {
+        exportTransactionsBtn.addEventListener('click', async () => {
+            if (state.transactions.length === 0) {
+                showToast('No transactions to export', 'error');
+                return;
+            }
+            try {
+                await waitForPapa();
+                const exportData = state.transactions.map(t => ({
+                    Date: formatDateDisplay(t.date),
+                    Customer: t.customer,
+                    Type: t.type,
+                    ProductType: t.productType,
+                    ProductName: t.productName,
+                    Quantity: t.quantity,
+                    Unit: t.unit,
+                    Price: t.price,
+                    Total: t.total
+                }));
+                exportToCSV(exportData, `transactions_${getTodayDateFilename()}.csv`);
+            } catch (error) {
+                showToast(`Export failed: ${error.message}`, 'error');
+            }
+        });
+    }
 
-    document.getElementById('export-customers-btn').addEventListener('click', () => {
-        const exportData = state.customers.map(c => ({
-            Name: c.name,
-            TC_ID: c.tc || '',
-            DOB: c.dob || '',
-            Phone: c.phone || '',
-            City: c.city || '',
-            District: c.district || '',
-            Street: c.street || '',
-            TotalDebt: c.veresiye,
-            TotalPaid: c.satis
-        }));
-        exportToCSV(exportData, `customers_${getTodayDate()}.csv`);
-    });
+    const exportCustomersBtn = document.getElementById('export-customers-btn');
+    if (exportCustomersBtn) {
+        exportCustomersBtn.addEventListener('click', async () => {
+            if (state.customers.length === 0) {
+                showToast('No customers to export', 'error');
+                return;
+            }
+            try {
+                await waitForPapa();
+                const exportData = state.customers.map(c => ({
+                    Name: c.name,
+                    TC_ID: c.tc || '',
+                    DOB: formatDateDisplay(c.dob),
+                    Phone: c.phone || '',
+                    City: c.city || '',
+                    District: c.district || '',
+                    Street: c.street || '',
+                    TotalDebt: c.veresiye,
+                    TotalPaid: c.satis
+                }));
+                exportToCSV(exportData, `customers_${getTodayDateFilename()}.csv`);
+            } catch (error) {
+                showToast(`Export failed: ${error.message}`, 'error');
+            }
+        });
+    }
 
-    document.getElementById('export-products-btn').addEventListener('click', () => {
-        const exportData = state.products.map(p => ({
-            Name: p.name,
-            Type: p.type,
-            Unit: p.unit,
-            Price: p.price,
-            Stock: p.stock || 0
-        }));
-        exportToCSV(exportData, `products_${getTodayDate()}.csv`);
-    });
+    const exportProductsBtn = document.getElementById('export-products-btn');
+    if (exportProductsBtn) {
+        exportProductsBtn.addEventListener('click', async () => {
+            if (state.products.length === 0) {
+                showToast('No products to export', 'error');
+                return;
+            }
+            try {
+                await waitForPapa();
+                const exportData = state.products.map(p => ({
+                    Name: p.name,
+                    Type: p.type,
+                    Unit: p.unit,
+                    Price: p.price,
+                    Stock: p.stock || 0
+                }));
+                exportToCSV(exportData, `products_${getTodayDateFilename()}.csv`);
+            } catch (error) {
+                showToast(`Export failed: ${error.message}`, 'error');
+            }
+        });
+    }
 
 
     // --- Clear Forms

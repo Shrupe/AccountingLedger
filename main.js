@@ -20,7 +20,7 @@ function createWindow() {
   win.loadFile('index.html');
   
   // Open DevTools (optional, for debugging)
-  win.webContents.openDevTools();
+  // win.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {

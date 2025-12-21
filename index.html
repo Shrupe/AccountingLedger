@@ -2,15 +2,14 @@
 <html lang="tr" class="h-full bg-gray-100">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:;">
+    <!-- Updated CSP to allow blob: for exports -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob:; script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accounting Ledger</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load Lucide icons -->
-    <script src="https://unpkg.com/lucide-react@latest/dist/lucide-react.js"></script>
-    <!-- Load PapaParse for CSV parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/papaparse/5.3.2/papaparse.min.js"></script>
+    <!-- Load PapaParse from local node_modules -->
+    <script src="./node_modules/papaparse/papaparse.min.js"></script>
     
     <style>
         :root {
@@ -349,7 +348,7 @@
                             <option value="KİLOGRAM">KİLOGRAM</option>
                             <option value="KOVAN">KOVAN</option>
                             <option value="TORBA">TORBA</option>
-                            <option value="DOLU">DOLU</option>
+                            <option value="PAKET">PAKET</option>
                             <option value="TON">TON</option>
                         </select>
                     </div>
@@ -504,8 +503,8 @@
                         <input type="text" id="c-name" class="form-input" placeholder="Ad Soyad" required>
                     </div>
                     <div>
-                        <label for="c-id" class="block text-sm font-medium text-gray-700 mb-1">TC Kimlik No (11 Haneli)</label>
-                        <input type="text" id="c-id" class="form-input" placeholder="11 haneli sayı" pattern="\d{11}" maxlength="11">
+                        <label for="c-id" class="block text-sm font-medium text-gray-700 mb-1">TC No</label>
+                        <input type="text" id="c-id" class="form-input" placeholder="TC No" pattern="\d{11}" maxlength="11">
                     </div>
                      <div>
                         <label for="c-dob" class="block text-sm font-medium text-gray-700 mb-1">Doğum Tarihi</label>
@@ -515,20 +514,20 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
                          <label for="c-city" class="block text-sm font-medium text-gray-700 mb-1">İl</label>
-                         <input type="text" id="c-city" class="form-input" placeholder="Örn: Ankara">
+                         <input type="text" id="c-city" class="form-input" placeholder="İl">
                     </div>
                     <div>
                          <label for="c-district" class="block text-sm font-medium text-gray-700 mb-1">İlçe</label>
-                         <input type="text" id="c-district" class="form-input" placeholder="Örn: Çankaya">
+                         <input type="text" id="c-district" class="form-input" placeholder="İlçe">
                     </div>
                     <div>
                          <label for="c-phone" class="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
-                         <input type="tel" id="c-phone" class="form-input" placeholder="0555...">
+                         <input type="tel" id="c-phone" class="form-input" placeholder="Telefon Nuamrası">
                     </div>
                 </div>
                 <div class="mb-4">
                     <label for="c-street" class="block text-sm font-medium text-gray-700 mb-1">Mahalle / Sokak / Cadde</label>
-                    <input type="text" id="c-street" class="form-input" placeholder="Açık adres...">
+                    <input type="text" id="c-street" class="form-input" placeholder="Açık adres">
                 </div>
                 <div class="flex justify-end">
                     <button type="submit" class="btn btn-primary w-full md:w-auto">
@@ -592,7 +591,7 @@
                         <option value="KİLOGRAM">KİLOGRAM</option>
                         <option value="KOVAN">KOVAN</option>
                         <option value="TORBA">TORBA</option>
-                        <option value="DOLU">DOLU</option>
+                        <option value="PAKET">PAKET</option>
                         <option value="TON">TON</option>
                     </select>
                 </div>
@@ -691,7 +690,7 @@
                         <option value="KİLOGRAM">KİLOGRAM</option>
                         <option value="KOVAN">KOVAN</option>
                         <option value="TORBA">TORBA</option>
-                        <option value="DOLU">DOLU</option>
+                        <option value="PAKET">PAKET</option>
                         <option value="TON">TON</option>
                     </select>
                 </div>

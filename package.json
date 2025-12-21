@@ -1,6 +1,6 @@
 {
   "name": "accounting-ledger",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "An accounting ledger app.",
   "main": "main.js",
   "scripts": {

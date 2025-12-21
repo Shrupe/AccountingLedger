@@ -76,14 +76,14 @@ function getTodayDate() {
 }
 
 /**
- * Gets today's date in DD-MM-YYYY format for filenames
+ * Gets today's date in DD.MM.YYYY format for filenames
  */
 function getTodayDateFilename() {
     const today = new Date();
     const day = String(today.getDate()).padStart(2, '0');
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const year = today.getFullYear();
-    return `${day}-${month}-${year}`;
+    return `${day}.${month}.${year}`;
 }
 
 /**
@@ -135,12 +135,12 @@ function waitForPapa(timeout = 5000) {
 function exportToCSV(data, filename) {
     try {
         if (!data || data.length === 0) {
-            showToast('No data to export', 'error');
+            showToast('Dışa aktarılacak veri yok', 'error');
             return;
         }
         
         if (typeof Papa === 'undefined') {
-            showToast('CSV library is loading... Please try again in a moment.', 'error');
+            showToast('CSV kütüphanesi yükleniyor... Lütfen biraz sonra tekrar deneyin.', 'error');
             return;
         }
         
@@ -159,10 +159,10 @@ function exportToCSV(data, filename) {
         // Clean up the URL object
         setTimeout(() => URL.revokeObjectURL(url), 100);
         
-        showToast(`Exported as ${filename}`, 'success');
+        showToast(`${filename} olarak dışa aktarıldı`, 'success');
     } catch (error) {
         console.error('Export error:', error);
-        showToast(`Export failed: ${error.message}`, 'error');
+        showToast(`Dışa aktarma başarısız: ${error.message}`, 'error');
     }
 }
 
@@ -307,7 +307,7 @@ function renderDashboard() {
                 <span class="px-2 py-1 text-xs font-medium rounded-full ${
                     netDebt > 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                 }">
-                    ${netDebt > 0 ? `Borçlu: ${formatCurrency(netDebt)}` : 'Ödendi'}
+                    ${netDebt > 0 ? `Borçlu: ${formatCurrency(netDebt)}` : 'Nötr'}
                 </span>
             </td>
         `;
@@ -434,7 +434,7 @@ transactionForm.addEventListener('submit', async (e) => {
     };
 
     if (!newTransaction.date || !newTransaction.customer || !newTransaction.productName || !newTransaction.quantity || !newTransaction.price) {
-        showToast('Please fill in all required fields.', 'error');
+        showToast('Lütfen tüm gerekli alanları doldurun.', 'error');
         return;
     }
 
@@ -468,7 +468,7 @@ transactionForm.addEventListener('submit', async (e) => {
     const saved = await DB.set('transactions', state.transactions);
 
     if (saved) {
-        showToast('Transaction saved and stock updated!', 'success');
+        showToast('İşlem kaydedildi ve stok güncellendi!', 'success');
         transactionForm.reset();
         document.getElementById('t-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
@@ -476,7 +476,7 @@ transactionForm.addEventListener('submit', async (e) => {
         renderDashboard(); 
         renderTransactionTable(state.transactions); 
     } else {
-        showToast('Failed to save transaction.', 'error');
+        showToast('İşlem kaydedilemedi.', 'error');
         state.transactions.pop();
         // Revert stock change if transaction failed (optional but good practice)
         if (product) {
@@ -497,7 +497,7 @@ paymentForm.addEventListener('submit', async (e) => {
     const paymentDate = document.getElementById('p-date').value;
 
     if (!paymentDate || !customerName || !paymentAmount || paymentAmount <= 0) {
-        showToast('Please fill in all fields with valid data.', 'error');
+        showToast('Lütfen tüm alanları geçerli verilerle doldurun.', 'error');
         return;
     }
 
@@ -518,7 +518,7 @@ paymentForm.addEventListener('submit', async (e) => {
     const saved = await DB.set('transactions', state.transactions);
 
     if (saved) {
-        showToast('Payment saved!', 'success');
+        showToast('Ödeme kaydedildi!', 'success');
         paymentForm.reset();
         document.getElementById('p-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
@@ -526,7 +526,7 @@ paymentForm.addEventListener('submit', async (e) => {
         renderDashboard(); 
         renderTransactionTable(state.transactions); 
     } else {
-        showToast('Failed to save payment.', 'error');
+        showToast('Ödeme kaydedilemedi.', 'error');
         state.transactions.pop();
     }
 });
@@ -547,8 +547,8 @@ function renderTransactionTable(transactions) {
         noTransactionsEl.style.display = 'none';
     }
 
-    // Sort by date, oldest first
-    transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort by date, newest first
+    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     transactions.forEach(t => {
         const row = document.createElement('tr');
@@ -653,6 +653,9 @@ function renderCustomerTable() {
             <td>${c.phone || '-'}</td>
             <td>${address}</td>
             <td class="flex gap-2">
+                <button class="btn btn-secondary btn-edit-customer" data-id="${c.id}" title="Düzenle">
+                    <svg id="icon-edit" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
                 <button class="btn btn-danger btn-delete-customer" data-id="${c.id}">
                     <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
@@ -680,7 +683,7 @@ customerForm.addEventListener('submit', async (e) => {
     }
     
     if (state.customers.find(c => c.name.toLowerCase() === name.toLowerCase())) {
-        showToast('Customer with this name already exists.', 'error');
+        showToast('Bu isimde bir müşteri zaten var.', 'error');
         return;
     }
 
@@ -696,7 +699,7 @@ customerForm.addEventListener('submit', async (e) => {
     renderCustomerTable();
     updateDatalists();
     customerForm.reset();
-    showToast('Customer added!', 'success');
+    showToast('Müşteri eklendi!', 'success');
 });
 
 
@@ -740,7 +743,7 @@ productForm.addEventListener('submit', async (e) => {
     const price = parseFloat(document.getElementById('p-price').value);
     
     if (!name || !price) {
-        showToast('Product name and price are required.', 'error');
+        showToast('Ürün adı ve fiyat gerekli.', 'error');
         return;
     }
     
@@ -752,10 +755,10 @@ productForm.addEventListener('submit', async (e) => {
     renderProductTable();
     updateDatalists();
     productForm.reset();
-    showToast('Product added!', 'success');
+    showToast('Ürün eklendi!', 'success');
 });
 
-
+/*
 // --- DATA IMPORT ---
 const importBtn = document.getElementById('import-btn');
 
@@ -815,7 +818,7 @@ importBtn.addEventListener('click', async () => {
     loadInitialData(); 
     showTab('dashboard'); 
 });
-
+*/
 
 // --- GLOBAL EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -873,17 +876,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 await waitForPapa();
                 const exportData = state.transactions.map(t => ({
-                    Date: formatDateDisplay(t.date),
-                    Customer: t.customer,
-                    Type: t.type,
-                    ProductType: t.productType,
-                    ProductName: t.productName,
-                    Quantity: t.quantity,
-                    Unit: t.unit,
-                    Price: t.price,
-                    Total: t.total
+                    Tarih: formatDateDisplay(t.date),
+                    Müşteri: t.customer,
+                    Tür: t.type,
+                    'Ürün Çeşidi': t.productType,
+                    'Ürün Adı': t.productName,
+                    Miktar: t.quantity,
+                    Birim: t.unit,
+                    Fiyat: t.price,
+                    Toplam: t.total
                 }));
-                exportToCSV(exportData, `transactions_${getTodayDateFilename()}.csv`);
+                exportToCSV(exportData, `islemler_${getTodayDateFilename()}.csv`);
             } catch (error) {
                 showToast(`Export failed: ${error.message}`, 'error');
             }
@@ -900,17 +903,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 await waitForPapa();
                 const exportData = state.customers.map(c => ({
-                    Name: c.name,
-                    TC_ID: c.tc || '',
-                    DOB: formatDateDisplay(c.dob),
-                    Phone: c.phone || '',
-                    City: c.city || '',
-                    District: c.district || '',
-                    Street: c.street || '',
-                    TotalDebt: c.veresiye,
-                    TotalPaid: c.satis
+                    İsim: c.name,
+                    'TC Kimlik': c.tc || '',
+                    'Doğum Tarihi': formatDateDisplay(c.dob),
+                    Telefon: c.phone || '',
+                    İl: c.city || '',
+                    İlçe: c.district || '',
+                    Sokak: c.street || '',
+                    'Toplam Borç': c.veresiye,
+                    'Toplam Ödeme': c.satis
                 }));
-                exportToCSV(exportData, `customers_${getTodayDateFilename()}.csv`);
+                exportToCSV(exportData, `musteriler_${getTodayDateFilename()}.csv`);
             } catch (error) {
                 showToast(`Export failed: ${error.message}`, 'error');
             }
@@ -927,13 +930,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 await waitForPapa();
                 const exportData = state.products.map(p => ({
-                    Name: p.name,
-                    Type: p.type,
-                    Unit: p.unit,
-                    Price: p.price,
-                    Stock: p.stock || 0
+                    İsim: p.name,
+                    Tür: p.type,
+                    Birim: p.unit,
+                    Fiyat: p.price,
+                    Stok: p.stock || 0
                 }));
-                exportToCSV(exportData, `products_${getTodayDateFilename()}.csv`);
+                exportToCSV(exportData, `urunler_${getTodayDateFilename()}.csv`);
             } catch (error) {
                 showToast(`Export failed: ${error.message}`, 'error');
             }
@@ -956,19 +959,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         const deleteButton = e.target.closest('.btn-delete-transaction');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
-            if (confirm('Are you sure you want to delete this transaction?')) {
+            if (confirm('Bu işlemi silmek istediğinizden emin misiniz?')) {
                 state.transactions = state.transactions.filter(t => t.id !== id);
                 await DB.set('transactions', state.transactions);
                 await updateCustomerAggregates(true);
                 updateDatalists();
                 renderTransactionTable(state.transactions);
                 renderDashboard(); 
-                showToast('Transaction deleted.', 'success');
+                showToast('İşlem silindi.', 'success');
             }
         }
     });
 
     document.getElementById('customer-table-body').addEventListener('click', async (e) => {
+        // Check for edit
+        const editButton = e.target.closest('.btn-edit-customer');
+        if (editButton) {
+            const id = editButton.getAttribute('data-id');
+            const customer = state.customers.find(c => c.id === id);
+            if (customer) {
+                document.getElementById('edit-c-hidden-id').value = customer.id;
+                document.getElementById('edit-c-name').value = customer.name;
+                document.getElementById('edit-c-id').value = customer.tc || '';
+                document.getElementById('edit-c-dob').value = customer.dob || '';
+                document.getElementById('edit-c-city').value = customer.city || '';
+                document.getElementById('edit-c-district').value = customer.district || '';
+                document.getElementById('edit-c-phone').value = customer.phone || '';
+                document.getElementById('edit-c-street').value = customer.street || '';
+                // Initialize flatpickr for edit modal date
+                flatpickr("#edit-c-dob", {
+                    dateFormat: "d/m/Y",
+                    locale: "tr",
+                    defaultDate: customer.dob || ''
+                });
+                document.getElementById('edit-customer-modal').style.display = 'flex';
+            }
+            return;
+        }
+
         const deleteButton = e.target.closest('.btn-delete-customer');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
@@ -976,12 +1004,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             const customerTransactions = state.transactions.filter(t => t.customer === customer.name);
             if (customerTransactions.length > 0) {
-                 if (!confirm('This customer has transactions. Deleting them will also delete all their transactions. Are you sure?')) {
+                 if (!confirm('Bu müşterinin işlemleri var. Silmek tüm işlemlerini de silecektir. Emin misiniz?')) {
                     return;
                  }
                  state.transactions = state.transactions.filter(t => t.customer !== customer.name);
                  await DB.set('transactions', state.transactions);
-            } else if (!confirm('Are you sure you want to delete this customer? This cannot be undone.')) {
+            } else if (!confirm('Bu müşteriyi silmek istediğinizden emin misiniz? Bu geri alınamaz.')) {
                 return;
             }
 
@@ -993,7 +1021,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateDatalists();
             renderDashboard();
             renderTransactionTable(state.transactions);
-            showToast('Customer deleted.', 'success');
+            showToast('Müşteri silindi.', 'success');
         }
     });
 
@@ -1017,12 +1045,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const deleteButton = e.target.closest('.btn-delete-product');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
-            if (confirm('Are you sure you want to delete this product?')) {
+            if (confirm('Bu ürünü silmek istediğinizden emin misiniz?')) {
                 state.products = state.products.filter(p => p.id !== id);
                 await DB.set('products', state.products);
                 renderProductTable();
                 updateDatalists();
-                showToast('Product deleted.', 'success');
+                showToast('Ürün silindi.', 'success');
             }
             return; 
         }
@@ -1063,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         if (!updatedProduct.name || updatedProduct.price < 0) {
-            showToast('Invalid product name or price.', 'error');
+            showToast('Geçersiz ürün adı veya fiyat.', 'error');
             return;
         }
 
@@ -1079,7 +1107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderProductTable();
         updateDatalists();
         editModal.style.display = 'none';
-        showToast('Product updated!', 'success');
+        showToast('Ürün güncellendi!', 'success');
     });
 
     // --- Add Stock Modal Listeners ---
@@ -1097,7 +1125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const quantityToAdd = parseFloat(document.getElementById('add-stock-quantity').value);
 
         if (isNaN(quantityToAdd) || quantityToAdd <= 0) {
-            showToast('Please enter a valid quantity.', 'error');
+            showToast('Lütfen geçerli bir miktar girin.', 'error');
             return;
         }
 
@@ -1107,9 +1135,85 @@ document.addEventListener('DOMContentLoaded', async () => {
             await DB.set('products', state.products);
             renderProductTable();
             stockModal.style.display = 'none';
-            showToast('Stock updated!', 'success');
+            showToast('Stok güncellendi!', 'success');
         }
     });
 
     loadInitialData();
+
+    // Initialize date pickers
+    flatpickr("#t-date", {
+        dateFormat: "d/m/Y",
+        locale: "tr",
+        defaultDate: getTodayDate()
+    });
+    flatpickr("#p-date", {
+        dateFormat: "d/m/Y",
+        locale: "tr",
+        defaultDate: getTodayDate()
+    });
+    flatpickr("#c-dob", {
+        dateFormat: "d/m/Y",
+        locale: "tr"
+    });
+
+    // --- Edit Customer Modal Listeners ---
+    const editCustomerModal = document.getElementById('edit-customer-modal');
+    const editCustomerForm = document.getElementById('edit-customer-form');
+    const cancelEditCustomerBtn = document.getElementById('cancel-edit-customer-btn');
+
+    cancelEditCustomerBtn.addEventListener('click', () => {
+        editCustomerModal.style.display = 'none';
+    });
+
+    editCustomerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('edit-c-hidden-id').value;
+        const updatedCustomer = {
+            id: id,
+            name: document.getElementById('edit-c-name').value.trim(),
+            tc: document.getElementById('edit-c-id').value.trim(),
+            dob: document.getElementById('edit-c-dob').value,
+            city: document.getElementById('edit-c-city').value.trim(),
+            district: document.getElementById('edit-c-district').value.trim(),
+            phone: document.getElementById('edit-c-phone').value.trim(),
+            street: document.getElementById('edit-c-street').value.trim(),
+            veresiye: 0, // Will be updated by aggregates
+            satis: 0
+        };
+
+        if (!updatedCustomer.name) {
+            showToast('Müşteri adı gerekli.', 'error');
+            return;
+        }
+
+        // Check for duplicate name, excluding current
+        const existing = state.customers.find(c => c.name.toLowerCase() === updatedCustomer.name.toLowerCase() && c.id !== id);
+        if (existing) {
+            showToast('Bu isimde bir müşteri zaten var.', 'error');
+            return;
+        }
+
+        // Update transactions if name changed
+        const oldCustomer = state.customers.find(c => c.id === id);
+        if (oldCustomer.name !== updatedCustomer.name) {
+            state.transactions.forEach(t => {
+                if (t.customer === oldCustomer.name) {
+                    t.customer = updatedCustomer.name;
+                }
+            });
+            await DB.set('transactions', state.transactions);
+        }
+
+        state.customers = state.customers.map(c => c.id === id ? updatedCustomer : c);
+        await DB.set('customers', state.customers);
+
+        await updateCustomerAggregates(true);
+        renderCustomerTable();
+        updateDatalists();
+        renderDashboard();
+        editCustomerModal.style.display = 'none';
+        showToast('Müşteri güncellendi!', 'success');
+    });
+
 });

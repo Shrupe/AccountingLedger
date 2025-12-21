@@ -3,11 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <!-- Updated CSP to allow blob: for exports -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob:; script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' https:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob:; script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' https:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accounting Ledger</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Flatpickr for date inputs -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/tr.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <!-- Load PapaParse from local node_modules -->
     <script src="./node_modules/papaparse/papaparse.min.js"></script>
     
@@ -233,10 +237,6 @@
                 <svg id="icon-package" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" x2="7.5" y1="9.4" y2="9.4"></line><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" x2="12" y1="22.08" y2="12"></line></svg>
                 Ürünler
             </button></li>
-            <li><button data-tab="import" class="tab-button w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors">
-                <svg id="icon-import" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m19 10-7 7-7-7"></path><path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"></path></svg>
-                Data Import
-            </button></li>
         </ul>
     </nav>
 
@@ -329,12 +329,12 @@
                     
                     <div class="md:col-span-2">
                         <label for="t-customer" class="block text-sm font-medium text-gray-700 mb-1">Müşteri İsmi</label>
-                        <input type="text" id="t-customer" class="form-input" list="customer-list" placeholder="Start typing..." required>
+                        <input type="text" id="t-customer" class="form-input" list="customer-list" placeholder="Yazmaya başlayın..." required>
                     </div>
 
                     <div class="md:col-span-2">
                         <label for="t-product-name" class="block text-sm font-medium text-gray-700 mb-1">Ürün Çeşidi</label>
-                        <input type="text" id="t-product-name" class="form-input" list="product-list" placeholder="Start typing...">
+                        <input type="text" id="t-product-name" class="form-input" list="product-list" placeholder="Yazmaya başlayın...">
                     </div>
                     <div>
                         <label for="t-quantity" class="block text-sm font-medium text-gray-700 mb-1">Miktar</label>
@@ -368,7 +368,7 @@
 
                     <div>
                         <label for="t-price" class="block text-sm font-medium text-gray-700 mb-1">Birim Fiyat</label>
-                        <input type="number" id="t-price" class="form-input" min="0" step="any" placeholder="Auto-fills from product">
+                        <input type="number" id="t-price" class="form-input" min="0" step="any" placeholder="Üründen otomatik doldurur">
                     </div>
                     <div>
                         <label for="t-total" class="block text-sm font-medium text-gray-700 mb-1">Toplam Fiyat</label>
@@ -424,7 +424,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 card p-4">
                 <div>
                     <label for="f-customer" class="block text-sm font-medium text-gray-700 mb-1">Müşteri</label>
-                    <input type="text" id="f-customer" class="form-input" placeholder="Search by name...">
+                    <input type="text" id="f-customer" class="form-input" placeholder="İsme göre ara...">
                 </div>
                 <div>
                     <label for="f-type" class="block text-sm font-medium text-gray-700 mb-1">Yöntem</label>
@@ -480,7 +480,7 @@
                     </table>
                 </div>
                 <div id="no-transactions" class="text-center p-8 text-gray-500" style="display: none;">
-                    No transactions found.
+                    İşlem bulunamadı.
                 </div>
             </div>
         </div>
@@ -522,7 +522,7 @@
                     </div>
                     <div>
                          <label for="c-phone" class="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
-                         <input type="tel" id="c-phone" class="form-input" placeholder="Telefon Nuamrası">
+                         <input type="tel" id="c-phone" class="form-input" placeholder="Telefon Numarası">
                     </div>
                 </div>
                 <div class="mb-4">
@@ -629,33 +629,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- Data Import Tab -->
-        <div id="import" class="tab-content" style="display: none;">
-            <h1 class="text-3xl font-bold mb-6 text-gray-800">Data Import</h1>
-            <div class="card p-6">
-                <p class="text-gray-600 mb-4">
-                    To get started, please copy and paste your data from your CSV files into the text boxes below.
-                    This only needs to be done once. The data will be saved to JSON files on your computer.
-                </p>
-                
-                <div class="mb-4">
-                    <label for="import-transactions" class="block text-sm font-medium text-gray-700 mb-2">1. Transactions (from 'ANA SAYFA.csv')</label>
-                    <textarea id="import-transactions" rows="8" class="form-input" placeholder="TARİH,ADI SOYADI,VERESİYE/SATIŞ,MALIN CİNSİ,ÇEŞİT,MİKTAR,ADET&#10;2025-01-16,ERDAL UYSAL,VERESİYE,İLAÇ,Stomp® Aqua,1,TANE&#10;..."></textarea>
-                </div>
-
-                <div class="mb-4">
-                    <label for="import-products" class="block text-sm font-medium text-gray-700 mb-2">2. Products (from 'İLAÇ FİYATLARI.csv' and 'GÜBRE FİYATLARI.csv')</label>
-                    <textarea id="import-products" rows="8" class="form-input" placeholder="ÜRÜN ADI,FİYAT&#10;ABG MEK 1.8 EC LT001,750&#10;ACTIWAVE - 10 Lt ,5000&#10;..."></textarea>
-                </div>
-                
-                <button id="import-btn" class="btn btn-primary">
-                    <svg id="icon-database" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14a9 3 0 0 0 18 0V5"></path><path d="M3 12a9 3 0 0 0 18 0"></path></svg>
-                    Import and Save Data
-                </button>
-            </div>
-        </div>
-
     </main>
 
     <!-- Global Alert/Toast -->
@@ -670,11 +643,11 @@
             <form id="edit-product-form">
                 <input type="hidden" id="edit-p-id">
                 <div class="mb-4">
-                    <label for="edit-p-name" class="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                    <label for="edit-p-name" class="block text-sm font-medium text-gray-700 mb-1">Ürün Adı</label>
                     <input type="text" id="edit-p-name" class="form-input" required>
                 </div>
                 <div class="mb-4">
-                    <label for="edit-p-type" class="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
+                    <label for="edit-p-type" class="block text-sm font-medium text-gray-700 mb-1">Ürün Çeşidi</label>
                     <select id="edit-p-type" class="form-select" required>
                         <option value="İLAÇ">İLAÇ</option>
                         <option value="GÜBRE">GÜBRE</option>
@@ -701,6 +674,52 @@
                 </div>
                 <div class="flex justify-end gap-4">
                     <button type="button" id="cancel-edit-btn" class="btn btn-secondary">İptal</button>
+                    <button type="submit" class="btn btn-primary">Değişiklikleri Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Customer Modal -->
+    <div id="edit-customer-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50" style="display: none;">
+        <div class="card p-6 w-full max-w-lg">
+            <h2 class="text-2xl font-bold mb-4">Müşteriyi Düzenle</h2>
+            <form id="edit-customer-form">
+                <input type="hidden" id="edit-c-hidden-id">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label for="edit-c-name" class="block text-sm font-medium text-gray-700 mb-1">Müşteri İsmi</label>
+                        <input type="text" id="edit-c-name" class="form-input" required>
+                    </div>
+                    <div>
+                        <label for="edit-c-id" class="block text-sm font-medium text-gray-700 mb-1">TC No</label>
+                        <input type="text" id="edit-c-id" class="form-input" pattern="\d{11}" maxlength="11">
+                    </div>
+                    <div>
+                        <label for="edit-c-dob" class="block text-sm font-medium text-gray-700 mb-1">Doğum Tarihi</label>
+                        <input type="date" id="edit-c-dob" class="form-input">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label for="edit-c-city" class="block text-sm font-medium text-gray-700 mb-1">İl</label>
+                        <input type="text" id="edit-c-city" class="form-input">
+                    </div>
+                    <div>
+                        <label for="edit-c-district" class="block text-sm font-medium text-gray-700 mb-1">İlçe</label>
+                        <input type="text" id="edit-c-district" class="form-input">
+                    </div>
+                    <div>
+                        <label for="edit-c-phone" class="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
+                        <input type="tel" id="edit-c-phone" class="form-input">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-c-street" class="block text-sm font-medium text-gray-700 mb-1">Mahalle / Sokak / Cadde</label>
+                    <input type="text" id="edit-c-street" class="form-input">
+                </div>
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-edit-customer-btn" class="btn btn-secondary">İptal</button>
                     <button type="submit" class="btn btn-primary">Değişiklikleri Kaydet</button>
                 </div>
             </form>

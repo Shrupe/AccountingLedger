@@ -95,7 +95,7 @@ function showToast(message, type = 'success') {
     
     toastMessage.textContent = message;
     
-    toast.classList.remove('bg-green-500', 'bg-red-500');
+    toast.classList.remove('bg-green-500', 'bg-red-500', 'opacity-0');
     if (type === 'error') {
         toast.classList.add('bg-red-500');
     } else {
@@ -105,6 +105,7 @@ function showToast(message, type = 'success') {
     toast.style.transform = 'translateX(0)';
     setTimeout(() => {
         toast.style.transform = 'translateX(calc(100% + 2rem))';
+        toast.classList.add('opacity-0');
     }, 3000);
 }
 

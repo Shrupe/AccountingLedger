@@ -250,6 +250,7 @@ function renderDashboard() {
     let totalTransactions = state.transactions.length;
     let totalCredit = 0;
     let totalSales = 0;
+    let totalCostOfGoods = 0;
 
     const customerAggregates = {};
     state.customers.forEach(c => {
@@ -274,21 +275,31 @@ function renderDashboard() {
         });
     }
 
+    // Calculate Cost of Goods Sold (COGS) for profit calculation
+    state.transactions.forEach(t => {
+        if (t.type !== 'ÖDEME' && t.type !== 'İADE') {
+            const product = state.products.find(p => p.name.toLowerCase() === t.productName.toLowerCase());
+            if (product) {
+                totalCostOfGoods += t.quantity * (product.buyingPrice || 0);
+            }
+        }
+    });
+
     document.getElementById('total-transactions').textContent = totalTransactions;
     document.getElementById('total-credit').textContent = formatCurrency(totalCredit);
     document.getElementById('total-sales').textContent = formatCurrency(totalSales);
     document.getElementById('total-customers').textContent = state.customers.length;
 
-    const netBalance = totalSales - totalCredit;
-    const netBalanceEl = document.getElementById('net-balance');
-    netBalanceEl.textContent = formatCurrency(netBalance);
-    netBalanceEl.classList.remove('text-red-600', 'text-green-600', 'text-gray-800');
-    if (netBalance > 0) {
-        netBalanceEl.classList.add('text-green-600'); 
-    } else if (netBalance < 0) {
-        netBalanceEl.classList.add('text-red-600'); 
+    const profit = totalSales - totalCostOfGoods;
+    const profitEl = document.getElementById('net-balance');
+    profitEl.textContent = formatCurrency(profit);
+    profitEl.classList.remove('text-red-600', 'text-green-600', 'text-gray-800');
+    if (profit > 0) {
+        profitEl.classList.add('text-green-600'); 
+    } else if (profit < 0) {
+        profitEl.classList.add('text-red-600'); 
     } else {
-        netBalanceEl.classList.add('text-gray-800'); 
+        profitEl.classList.add('text-gray-800'); 
     }
     
     const balanceBody = document.getElementById('customer-balances-table');
@@ -393,7 +404,8 @@ tProductName.addEventListener('change', () => {
     const productName = tProductName.value.trim();
     const product = state.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
     if (product) {
-        tPrice.value = product.price;
+        // Use selling price for transactions
+        tPrice.value = product.sellingPrice;
         try {
             const tUnitEl = document.getElementById('t-unit');
             if (tUnitEl && product.unit) tUnitEl.value = product.unit;
@@ -415,7 +427,8 @@ transactionForm.addEventListener('submit', async (e) => {
     
     let price = parseFloat(tPrice.value);
     if ((!price || price === 0) && product) {
-        price = product.price;
+        // Use selling price as default
+        price = product.sellingPrice;
     }
 
     const quantity = parseFloat(tQuantity.value);
@@ -716,7 +729,8 @@ function renderProductTable() {
             <td>${p.name}</td>
             <td>${p.type || 'DİĞER'}</td>
             <td>${p.unit || '-'}</td>
-            <td>${formatCurrency(p.price)}</td>
+            <td>${formatCurrency(p.buyingPrice || 0)}</td>
+            <td>${formatCurrency(p.sellingPrice || 0)}</td>
             <td>${p.stock || 0}</td>
             <td class="flex gap-2">
                 <button class="btn btn-success btn-add-stock" data-id="${p.id}" title="Stok Ekle">
@@ -741,15 +755,16 @@ productForm.addEventListener('submit', async (e) => {
     const name = document.getElementById('p-name').value.trim();
     const type = document.getElementById('p-type').value;
     const unit = document.getElementById('p-unit').value.trim();
-    const price = parseFloat(document.getElementById('p-price').value);
+    const buyingPrice = parseFloat(document.getElementById('p-buying-price').value);
+    const sellingPrice = parseFloat(document.getElementById('p-selling-price').value);
     
-    if (!name || !price) {
-        showToast('Ürün adı ve fiyat gerekli.', 'error');
+    if (!name || !buyingPrice || !sellingPrice) {
+        showToast('Ürün adı ve her iki fiyat gerekli.', 'error');
         return;
     }
     
     // Default stock is 0
-    const newProduct = { id: DB.generateId(), name, type, unit, price, stock: 0 };
+    const newProduct = { id: DB.generateId(), name, type, unit, buyingPrice, sellingPrice, stock: 0 };
     state.products.push(newProduct);
     await DB.set('products', state.products);
     
@@ -934,7 +949,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     İsim: p.name,
                     Tür: p.type,
                     Birim: p.unit,
-                    Fiyat: p.price,
+                    'Alış Fiyatı': p.buyingPrice,
+                    'Satış Fiyatı': p.sellingPrice,
                     Stok: p.stock || 0
                 }));
                 exportToCSV(exportData, `urunler_${getTodayDateFilename()}.csv`);
@@ -1065,7 +1081,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 document.getElementById('edit-p-name').value = product.name;
                 document.getElementById('edit-p-type').value = product.type;
                 document.getElementById('edit-p-unit').value = product.unit || '';
-                document.getElementById('edit-p-price').value = product.price;
+                document.getElementById('edit-p-buying-price').value = product.buyingPrice;
+                document.getElementById('edit-p-selling-price').value = product.sellingPrice;
                 document.getElementById('edit-product-modal').style.display = 'flex';
             }
         }
@@ -1083,15 +1100,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     editForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('edit-p-id').value;
+        const buyingPrice = parseFloat(document.getElementById('edit-p-buying-price').value);
+        const sellingPrice = parseFloat(document.getElementById('edit-p-selling-price').value);
         const updatedProduct = {
             id: id,
             name: document.getElementById('edit-p-name').value.trim(),
             type: document.getElementById('edit-p-type').value,
             unit: document.getElementById('edit-p-unit').value.trim(),
-            price: parseFloat(document.getElementById('edit-p-price').value)
+            buyingPrice: buyingPrice,
+            sellingPrice: sellingPrice
         };
 
-        if (!updatedProduct.name || updatedProduct.price < 0) {
+        if (!updatedProduct.name || buyingPrice < 0 || sellingPrice < 0) {
             showToast('Geçersiz ürün adı veya fiyat.', 'error');
             return;
         }

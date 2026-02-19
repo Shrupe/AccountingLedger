@@ -12,8 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/tr.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <!-- Load PapaParse from local node_modules -->
-    <script src="./node_modules/papaparse/papaparse.min.js"></script>
+    <!-- PapaParse will be loaded from CDN below for Electron compatibility -->
     
     <style>
         :root {
@@ -260,7 +259,7 @@
                     <p id="total-sales" class="text-3xl font-bold mt-2 text-green-600">0.00 TL</p>
                 </div>
                 <div class="card p-6">
-                    <h2 class="text-sm font-medium text-gray-500 uppercase">Net</h2>
+                    <h2 class="text-sm font-medium text-gray-500 uppercase">Kâr</h2>
                     <p id="net-balance" class="text-3xl font-bold mt-2 text-gray-800">0.00 TL</p>
                 </div>
                 <div class="card p-6">
@@ -536,8 +535,8 @@
                     </button>
                 </div>
             </form>
-            
-            <!-- Customer List -->
+                    <!-- Load PapaParse from CDN for Electron compatibility -->
+                    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
             <div class="card overflow-hidden">
                  <div class="overflow-x-auto">
                     <table class="data-table">
@@ -595,10 +594,13 @@
                         <option value="TON">TON</option>
                     </select>
                 </div>
-
                 <div>
-                    <label for="p-price" class="block text-sm font-medium text-gray-700 mb-1">Fiyat</label>
-                    <input type="number" id="p-price" class="form-input" min="0" step="any" placeholder="0.00" required>
+                    <label for="p-buying-price" class="block text-sm font-medium text-gray-700 mb-1">Alış Fiyatı</label>
+                    <input type="number" id="p-buying-price" class="form-input" min="0" step="any" placeholder="0.00" required>
+                </div>
+                <div>
+                    <label for="p-selling-price" class="block text-sm font-medium text-gray-700 mb-1">Satış Fiyatı</label>
+                    <input type="number" id="p-selling-price" class="form-input" min="0" step="any" placeholder="0.00" required>
                 </div>
                 <div class="flex items-end">
                     <button type="submit" class="btn btn-primary w-full">
@@ -617,7 +619,8 @@
                                 <th>İsim</th>
                                 <th>Çeşit</th>
                                 <th>Birim</th>
-                                <th>Fiyat</th>
+                                <th>Alış Fiyatı</th>
+                                <th>Satış Fiyatı</th>
                                 <th>Stok</th>
                                 <th>İşlemler</th>
                             </tr>
@@ -667,10 +670,13 @@
                         <option value="TON">TON</option>
                     </select>
                 </div>
-
                 <div class="mb-4">
-                    <label for="edit-p-price" class="block text-sm font-medium text-gray-700 mb-1">Fiyat</label>
-                    <input type="number" id="edit-p-price" class="form-input" min="0" step="any" required>
+                    <label for="edit-p-buying-price" class="block text-sm font-medium text-gray-700 mb-1">Alış Fiyatı</label>
+                    <input type="number" id="edit-p-buying-price" class="form-input" min="0" step="any" required>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-p-selling-price" class="block text-sm font-medium text-gray-700 mb-1">Satış Fiyatı</label>
+                    <input type="number" id="edit-p-selling-price" class="form-input" min="0" step="any" required>
                 </div>
                 <div class="flex justify-end gap-4">
                     <button type="button" id="cancel-edit-btn" class="btn btn-secondary">İptal</button>

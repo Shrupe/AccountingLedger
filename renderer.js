@@ -1,3 +1,62 @@
+// --- LOGGER SYSTEM ---
+const Logger = {
+    logs: [],
+    maxLogs: 50,
+    
+    log: function(message) {
+        const timestamp = new Date().toLocaleTimeString('tr-TR');
+        const entry = { timestamp, message, type: 'info', devOnly: false };
+        this.logs.push(entry);
+        if (this.logs.length > this.maxLogs) this.logs.shift();
+        console.log(`[${timestamp}] ${message}`);
+    },
+    
+    info: function(devMessage, uiMessage) {
+        const timestamp = new Date().toLocaleTimeString('tr-TR');
+        const entry = { timestamp, message: devMessage, type: 'info', devOnly: true };
+        this.logs.push(entry);
+        if (this.logs.length > this.maxLogs) this.logs.shift();
+        console.info(`[${timestamp}] ${devMessage}`);
+        if (uiMessage) notify(uiMessage, 'info', false);
+    },
+    
+    success: function(devMessage, uiMessage) {
+        const timestamp = new Date().toLocaleTimeString('tr-TR');
+        const entry = { timestamp, message: devMessage, type: 'success', devOnly: true };
+        this.logs.push(entry);
+        if (this.logs.length > this.maxLogs) this.logs.shift();
+        console.log(`[${timestamp}] ✓ ${devMessage}`);
+        if (uiMessage) notify(uiMessage, 'success', false);
+    },
+    
+    warn: function(devMessage, uiMessage) {
+        const timestamp = new Date().toLocaleTimeString('tr-TR');
+        const entry = { timestamp, message: devMessage, type: 'warning', devOnly: true };
+        this.logs.push(entry);
+        if (this.logs.length > this.maxLogs) this.logs.shift();
+        console.warn(`[${timestamp}] ⚠ ${devMessage}`);
+        if (uiMessage) notify(uiMessage || devMessage, 'warning', false);
+    },
+    
+    error: function(devMessage, uiMessage) {
+        const timestamp = new Date().toLocaleTimeString('tr-TR');
+        const entry = { timestamp, message: devMessage, type: 'error', devOnly: true };
+        this.logs.push(entry);
+        if (this.logs.length > this.maxLogs) this.logs.shift();
+        console.error(`[${timestamp}] ✗ ${devMessage}`);
+        if (uiMessage) notify(uiMessage, 'error', true);
+    },
+    
+    getAll: function() {
+        return this.logs;
+    },
+    
+    clear: function() {
+        this.logs = [];
+        console.clear();
+    }
+};
+
 // --- DATABASE HELPERS (using Electron's file system via preload.js) ---
 const DB = {
     // Get data from a JSON file
@@ -6,8 +65,7 @@ const DB = {
         if (success) {
             return data;
         } else {
-            console.error(`Failed to load ${key}:`, error);
-            showToast(`Error loading data: ${error}`, 'error');
+            Logger.error(`Failed to load ${key}: ${error}`, 'Veri yüklenemedi.');
             return []; // Return empty array on failure
         }
     },
@@ -15,8 +73,7 @@ const DB = {
     set: async (key, data) => {
         const { success, path, error } = await window.electronAPI.saveData(key, data);
         if (!success) {
-            console.error(`Failed to save ${key}:`, error);
-            showToast(`Error saving data: ${error}`, 'error');
+            Logger.error(`Failed to save ${key}: ${error}`, 'Veri kaydedilemedi.');
         }
         return success;
     },
@@ -32,8 +89,13 @@ let state = {
     customers: [],
     products: []
 };
+let databases = []; // List of all databases
+let currentDatabaseId = null; // Currently active database
 let currentTab = 'dashboard';
 let currentSort = { field: 'name', direction: 'asc' }; // For customer sorting
+
+// --- DATABASE METADATA ---
+// Stores database info: { id, name, createdDate, lastModified }
 
 // --- UTILITY FUNCTIONS ---
 
@@ -86,27 +148,65 @@ function getTodayDateFilename() {
     return `${day}.${month}.${year}`;
 }
 
-/**
- * Shows a toast notification
- */
-function showToast(message, type = 'success') {
-    const toast = document.getElementById('toast');
-    const toastMessage = document.getElementById('toast-message');
+// --- NOTIFICATION SYSTEM ---
+let notificationTimeout = null;
+let currentNotificationType = 'info';
+
+function getNotificationIcon(type) {
+    const icons = {
+        success: '<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+        error: '<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>',
+        warning: '<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3.05h16.94a2 2 0 0 0 1.71-3.05L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+        info: '<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>',
+        loading: '<svg class="notification-spinner" width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>'
+    };
+    return icons[type] || icons.info;
+}
+
+function notify(message, type = 'info', keepOpen = false) {
+    const panel = document.getElementById('notification-panel');
+    const messageEl = document.getElementById('notification-message');
+    const iconEl = document.getElementById('notification-icon');
+    const closeBtn = document.getElementById('notification-close');
     
-    toastMessage.textContent = message;
+    // Clear previous timeout
+    if (notificationTimeout) clearTimeout(notificationTimeout);
     
-    toast.classList.remove('bg-green-500', 'bg-red-500', 'opacity-0');
-    if (type === 'error') {
-        toast.classList.add('bg-red-500');
-    } else {
-        toast.classList.add('bg-green-500');
+    // Update panel
+    panel.className = `notification-panel ${type}`;
+    messageEl.textContent = message;
+    iconEl.innerHTML = getNotificationIcon(type);
+    currentNotificationType = type;
+    
+    // Show panel
+    panel.style.display = 'block';
+    
+    // Auto-hide after 4 seconds if not an error and keepOpen is false
+    if (!keepOpen && type !== 'error') {
+        notificationTimeout = setTimeout(() => {
+            panel.style.display = 'none';
+        }, 4000);
     }
+}
+
+function showLoading(message = 'İşlem devam ediyor...') {
+    const panel = document.getElementById('notification-panel');
+    const messageEl = document.getElementById('notification-message');
+    const iconEl = document.getElementById('notification-icon');
     
-    toast.style.transform = 'translateX(0)';
-    setTimeout(() => {
-        toast.style.transform = 'translateX(calc(100% + 2rem))';
-        toast.classList.add('opacity-0');
-    }, 3000);
+    panel.className = 'notification-panel info';
+    messageEl.textContent = message;
+    iconEl.innerHTML = getNotificationIcon('loading');
+    panel.style.display = 'block';
+    
+    // Clear any pending timeout
+    if (notificationTimeout) clearTimeout(notificationTimeout);
+}
+
+function hideNotification() {
+    const panel = document.getElementById('notification-panel');
+    panel.style.display = 'none';
+    if (notificationTimeout) clearTimeout(notificationTimeout);
 }
 
 /**
@@ -136,12 +236,12 @@ function waitForPapa(timeout = 5000) {
 function exportToCSV(data, filename) {
     try {
         if (!data || data.length === 0) {
-            showToast('Dışa aktarılacak veri yok', 'error');
+            Logger.warn('Export attempted with no data', 'Dışa aktarılacak veri yok');
             return;
         }
         
         if (typeof Papa === 'undefined') {
-            showToast('CSV kütüphanesi yükleniyor... Lütfen biraz sonra tekrar deneyin.', 'error');
+            Logger.error('PapaParse library not available for export', 'CSV kütüphanesi yükleniyor... Lütfen biraz sonra tekrar deneyin.');
             return;
         }
         
@@ -160,10 +260,9 @@ function exportToCSV(data, filename) {
         // Clean up the URL object
         setTimeout(() => URL.revokeObjectURL(url), 100);
         
-        showToast(`${filename} olarak dışa aktarıldı`, 'success');
+        Logger.success(`Exported to file: ${filename}`, `${filename} olarak dışa aktarıldı`);
     } catch (error) {
-        console.error('Export error:', error);
-        showToast(`Dışa aktarma başarısız: ${error.message}`, 'error');
+        Logger.error(`Export error: ${error.message}`, 'Dışa aktarma başarısız oldu.');
     }
 }
 
@@ -222,28 +321,19 @@ subTabButtons.forEach(button => {
 // --- DATA RENDERING ---
 
 async function loadInitialData() {
-    state.transactions = await DB.get('transactions');
-    state.customers = await DB.get('customers');
-    state.products = await DB.get('products');
+    // Load databases first
+    await loadDatabases();
     
-    // Ensure all products have a stock property
-    state.products.forEach(p => {
-        if (typeof p.stock !== 'number') {
-            p.stock = 0;
-        }
-    });
-
-    await updateCustomerAggregates(true);
-
+    // Load current database data
+    if (currentDatabaseId) {
+        await loadDatabase(currentDatabaseId);
+    }
+    
     renderDashboard();
     updateDatalists();
     
     document.getElementById('t-date').value = getTodayDate();
     document.getElementById('p-date').value = getTodayDate();
-    
-    if (state.transactions.length === 0 && state.products.length === 0) {
-        showTab('import');
-    }
 }
 
 function renderDashboard() {
@@ -361,7 +451,7 @@ async function updateCustomerAggregates(saveToDB = false) {
     });
 
     if (saveToDB) {
-        await DB.set('customers', state.customers);
+        await saveCurrentDatabase();
     }
 }
 
@@ -381,6 +471,278 @@ function updateDatalists() {
         option.value = p.name;
         productList.appendChild(option);
     });
+}
+
+// --- DATABASE MANAGEMENT ---
+
+async function loadDatabases() {
+    const metadata = await DB.get('database-metadata');
+    databases = Array.isArray(metadata) ? metadata : [];
+    
+    // Set current database to first one if not set
+    if (databases.length > 0 && !currentDatabaseId) {
+        currentDatabaseId = databases[0].id;
+    } else if (databases.length === 0) {
+        // Create default database
+        await createDatabase('Ana Veritabanı');
+    }
+    
+    renderDatabaseTable();
+    updateCurrentDatabaseDisplay();
+}
+
+async function createDatabase(name) {
+    if (!name.trim()) {
+        Logger.warn('Empty database name', 'Veritabanı adı boş olamaz.');
+        return false;
+    }
+    
+    if (databases.some(db => db.name.toLowerCase() === name.toLowerCase())) {
+        Logger.warn('Duplicate database name', 'Bu isimde bir veritabanı zaten var.');
+        return false;
+    }
+    
+    const dbId = DB.generateId();
+    const now = new Date();
+    const dbMetadata = {
+        id: dbId,
+        name: name.trim(),
+        createdDate: now.toISOString(),
+        lastModified: now.toISOString()
+    };
+    
+    databases.push(dbMetadata);
+    
+    // Initialize empty database
+    await DB.set(`db-${dbId}-transactions`, []);
+    await DB.set(`db-${dbId}-customers`, []);
+    await DB.set(`db-${dbId}-products`, []);
+    
+    // Save database metadata
+    await saveDatabaseMetadata();
+    
+    // Switch to new database
+    currentDatabaseId = dbId;
+    await loadDatabase(dbId);
+    
+    Logger.success('Database created', `"${name}" veritabanı oluşturuldu.`);
+    renderDatabaseTable();
+    updateCurrentDatabaseDisplay();
+    
+    return true;
+}
+
+async function deleteDatabase(dbId) {
+    const database = databases.find(db => db.id === dbId);
+    if (!database) return false;
+    
+    if (!confirm(`"${database.name}" veritabanını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`)) {
+        return false;
+    }
+    
+    // Delete database data
+    await DB.set(`db-${dbId}-transactions`, null);
+    await DB.set(`db-${dbId}-customers`, null);
+    await DB.set(`db-${dbId}-products`, null);
+    
+    // Remove from list
+    databases = databases.filter(db => db.id !== dbId);
+    await saveDatabaseMetadata();
+    
+    // If deleted database was current, switch to first available
+    if (currentDatabaseId === dbId) {
+        if (databases.length > 0) {
+            currentDatabaseId = databases[0].id;
+            await loadDatabase(currentDatabaseId);
+        } else {
+            await createDatabase('Ana Veritabanı');
+        }
+    }
+    
+    Logger.success('Database deleted', `"${database.name}" veritabanı silindi.`);
+    renderDatabaseTable();
+    updateCurrentDatabaseDisplay();
+    
+    return true;
+}
+
+async function loadDatabase(dbId) {
+    const database = databases.find(db => db.id === dbId);
+    if (!database) {
+        Logger.error('Database not found', 'Veritabanı bulunamadı.');
+        return false;
+    }
+    
+    currentDatabaseId = dbId;
+    
+    // Load database data
+    state.transactions = await DB.get(`db-${dbId}-transactions`);
+    state.customers = await DB.get(`db-${dbId}-customers`);
+    state.products = await DB.get(`db-${dbId}-products`);
+    
+    // Ensure products have stock property
+    state.products.forEach(p => {
+        if (typeof p.stock !== 'number') p.stock = 0;
+    });
+    
+    await updateCustomerAggregates(true);
+    updateDatalists();
+    renderDashboard();
+    
+    Logger.success(`Database switched: ${database.name}`);
+    updateCurrentDatabaseDisplay();
+    renderDatabaseTable();
+    
+    return true;
+}
+
+async function saveDatabaseMetadata() {
+    await DB.set('database-metadata', databases);
+}
+
+async function saveCurrentDatabase() {
+    if (!currentDatabaseId) return;
+    
+    const now = new Date();
+    const currentDb = databases.find(db => db.id === currentDatabaseId);
+    if (currentDb) {
+        currentDb.lastModified = now.toISOString();
+    }
+    
+    await DB.set(`db-${currentDatabaseId}-transactions`, state.transactions);
+    await DB.set(`db-${currentDatabaseId}-customers`, state.customers);
+    await DB.set(`db-${currentDatabaseId}-products`, state.products);
+    await saveDatabaseMetadata();
+}
+
+function updateCurrentDatabaseDisplay() {
+    const currentDb = databases.find(db => db.id === currentDatabaseId);
+    if (currentDb) {
+        document.getElementById('current-db-name').textContent = currentDb.name;
+        document.getElementById('current-db-date').textContent = formatDateDisplay(currentDb.createdDate);
+    } else {
+        document.getElementById('current-db-name').textContent = 'Yükleniyor...';
+        document.getElementById('current-db-date').textContent = '-';
+    }
+}
+
+function renderDatabaseTable() {
+    const tableBody = document.getElementById('database-table-body');
+    tableBody.innerHTML = '';
+    
+    if (databases.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500 py-8">Veritabanı bulunamadı</td></tr>';
+        return;
+    }
+    
+    databases.forEach(db => {
+        const row = document.createElement('tr');
+        const isActive = db.id === currentDatabaseId;
+        
+        row.innerHTML = `
+            <td class="${isActive ? 'font-bold text-blue-600' : ''}">${db.name}${isActive ? ' (Aktif)' : ''}</td>
+            <td>${formatDateDisplay(db.createdDate)}</td>
+            <td>${formatDateDisplay(db.lastModified)}</td>
+            <td class="flex gap-2">
+                ${!isActive ? `<button class="btn btn-secondary btn-switch-db" data-id="${db.id}" data-name="${db.name}" title="Aç">
+                    <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21H3v-2a6 6 0 0 1 6-6h3v2m6-11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"></path></svg>
+                    Aç
+                </button>` : '<span class="px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">Aktif</span>'}
+                <button class="btn btn-danger btn-delete-db" data-id="${db.id}" title="Sil">
+                    <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Sil
+                </button>
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
+    
+    replaceIcons();
+}
+
+async function exportAllDatabases() {
+    try {
+        showLoading('Veritabanları dışa aktarılıyor...');
+        await waitForPapa();
+        
+        const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            databases: []
+        };
+        
+        // Collect all database data
+        for (const db of databases) {
+            const dbData = {
+                metadata: db,
+                transactions: await DB.get(`db-${db.id}-transactions`),
+                customers: await DB.get(`db-${db.id}-customers`),
+                products: await DB.get(`db-${db.id}-products`)
+            };
+            exportData.databases.push(dbData);
+        }
+        
+        // Create JSON file
+        const json = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([json], { type: 'application/json;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `veritabanlari_${getTodayDateFilename()}.json`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+        
+        Logger.success('Databases exported successfully', 'Tüm veritabanları dışa aktarıldı.');
+        hideNotification();
+    } catch (error) {
+        Logger.error(`Export failed: ${error.message}`, 'Dışa aktarma başarısız oldu.');
+    }
+}
+
+async function importAllDatabases(file) {
+    try {
+        showLoading('Veritabanları içe aktarılıyor...');
+        
+        const text = await file.text();
+        const importData = JSON.parse(text);
+        
+        if (!importData.databases || !Array.isArray(importData.databases)) {
+            throw new Error('Geçersiz veritabanı dosyası formatı.');
+        }
+        
+        // Merge or replace databases
+        for (const dbData of importData.databases) {
+            const existingDb = databases.find(db => db.id === dbData.metadata.id);
+            
+            if (!existingDb) {
+                databases.push(dbData.metadata);
+            }
+            
+            // Save database data
+            await DB.set(`db-${dbData.metadata.id}-transactions`, dbData.transactions || []);
+            await DB.set(`db-${dbData.metadata.id}-customers`, dbData.customers || []);
+            await DB.set(`db-${dbData.metadata.id}-products`, dbData.products || []);
+        }
+        
+        // Save updated metadata
+        await saveDatabaseMetadata();
+        
+        // Switch to first imported database
+        if (importData.databases.length > 0) {
+            await loadDatabase(importData.databases[0].metadata.id);
+        }
+        
+        renderDatabaseTable();
+        Logger.success(`${importData.databases.length} veritabanı içe aktarıldı.`, 'İçe aktarma başarılı.');
+        hideNotification();
+    } catch (error) {
+        Logger.error(`Import failed: ${error.message}`, 'İçe aktarma başarısız oldu.');
+    }
 }
 
 
@@ -448,7 +810,7 @@ transactionForm.addEventListener('submit', async (e) => {
     };
 
     if (!newTransaction.date || !newTransaction.customer || !newTransaction.productName || !newTransaction.quantity || !newTransaction.price) {
-        showToast('Lütfen tüm gerekli alanları doldurun.', 'error');
+        Logger.warn('Transaction submission with missing required fields', 'Lütfen tüm gerekli alanları doldurun.');
         return;
     }
 
@@ -462,27 +824,27 @@ transactionForm.addEventListener('submit', async (e) => {
         } else {
             // Check stock sufficiency for sales
             if (currentStock < quantity) {
-                showToast('Stokta bu ürün mevcut değil!', 'error');
+                Logger.error(`Insufficient stock for product: ${productName}. Available: ${currentStock}, Requested: ${quantity}`, 'Stokta bu ürün mevcut değil!');
                 return;
             }
             // For Sales (VERESİYE, SATIŞ, İKİSİDE), we decrease stock
             product.stock = currentStock - quantity;
         }
         
-        // Save product changes immediately
-        await DB.set('products', state.products);
+        // Save product changes (will be saved again with transaction but this ensures consistency)
+        await saveCurrentDatabase();
     } else {
         if (!product) {
-            showToast('Ürün bulunamadı!', 'error'); 
+            Logger.error('Product not found in database', 'Ürün bulunamadı!'); 
             return; 
         }
     }
 
     state.transactions.push(newTransaction);
-    const saved = await DB.set('transactions', state.transactions);
+    const saved = await saveCurrentDatabase();
 
     if (saved) {
-        showToast('İşlem kaydedildi ve stok güncellendi!', 'success');
+        Logger.success('Transaction recorded and stock updated', 'İşlem kaydedildi ve stok güncellendi!');
         transactionForm.reset();
         document.getElementById('t-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
@@ -490,7 +852,7 @@ transactionForm.addEventListener('submit', async (e) => {
         renderDashboard(); 
         renderTransactionTable(state.transactions); 
     } else {
-        showToast('İşlem kaydedilemedi.', 'error');
+        Logger.error('Failed to save transaction to database', 'İşlem kaydedilemedi.');
         state.transactions.pop();
         // Revert stock change if transaction failed (optional but good practice)
         if (product) {
@@ -511,7 +873,7 @@ paymentForm.addEventListener('submit', async (e) => {
     const paymentDate = document.getElementById('p-date').value;
 
     if (!paymentDate || !customerName || !paymentAmount || paymentAmount <= 0) {
-        showToast('Lütfen tüm alanları geçerli verilerle doldurun.', 'error');
+        Logger.warn('Payment submission with invalid data', 'Lütfen tüm alanları geçerli verilerle doldurun.');
         return;
     }
 
@@ -529,10 +891,10 @@ paymentForm.addEventListener('submit', async (e) => {
     };
 
     state.transactions.push(newPaymentTransaction);
-    const saved = await DB.set('transactions', state.transactions);
+    const saved = await saveCurrentDatabase();
 
     if (saved) {
-        showToast('Ödeme kaydedildi!', 'success');
+        Logger.success('Payment recorded', 'Ödeme kaydedildi!');
         paymentForm.reset();
         document.getElementById('p-date').value = getTodayDate(); 
         await updateCustomerAggregates(true);
@@ -540,7 +902,7 @@ paymentForm.addEventListener('submit', async (e) => {
         renderDashboard(); 
         renderTransactionTable(state.transactions); 
     } else {
-        showToast('Ödeme kaydedilemedi.', 'error');
+        Logger.error('Failed to save payment to database', 'Ödeme kaydedilemedi.');
         state.transactions.pop();
     }
 });
@@ -569,6 +931,7 @@ function renderTransactionTable(transactions) {
         
         if (t.type === 'ÖDEME') {
             row.innerHTML = `
+                <td><code class="text-xs bg-gray-100 px-2 py-1 rounded">${t.id}</code></td>
                 <td>${formatDateDisplay(t.date)}</td>
                 <td>${t.customer}</td>
                 <td><span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">${t.type}</span></td>
@@ -586,6 +949,7 @@ function renderTransactionTable(transactions) {
             `;
         } else {
              row.innerHTML = `
+                <td><code class="text-xs bg-gray-100 px-2 py-1 rounded">${t.id}</code></td>
                 <td>${formatDateDisplay(t.date)}</td>
                 <td>${t.customer}</td>
                 <td>${t.type}</td>
@@ -609,21 +973,24 @@ function renderTransactionTable(transactions) {
 }
 
 filterBtn.addEventListener('click', () => {
+    const fId = document.getElementById('f-id').value.toLowerCase();
     const fCustomer = document.getElementById('f-customer').value.toLowerCase();
     const fType = document.getElementById('f-type').value;
     const fProductType = document.getElementById('f-product-type').value;
 
     const filtered = state.transactions.filter(t => {
+        const idMatch = !fId || t.id.toLowerCase().includes(fId);
         const customerMatch = t.customer.toLowerCase().includes(fCustomer);
         const typeMatch = !fType || t.type === fType;
         const productTypeMatch = !fProductType || t.productType === fProductType;
-        return customerMatch && typeMatch && productTypeMatch;
+        return idMatch && customerMatch && typeMatch && productTypeMatch;
     });
     
     renderTransactionTable(filtered);
 });
 
 resetFilterBtn.addEventListener('click', () => {
+    document.getElementById('f-id').value = '';
     document.getElementById('f-customer').value = '';
     document.getElementById('f-type').value = '';
     document.getElementById('f-product-type').value = '';
@@ -692,12 +1059,12 @@ customerForm.addEventListener('submit', async (e) => {
     const street = document.getElementById('c-street').value.trim();
     
     if (!name) {
-        showToast('Customer name is required.', 'error');
+        Logger.warn('Customer creation without name', 'Müşteri adı gerekli.');
         return;
     }
     
     if (state.customers.find(c => c.name.toLowerCase() === name.toLowerCase())) {
-        showToast('Bu isimde bir müşteri zaten var.', 'error');
+        Logger.warn('Duplicate customer name attempted', 'Bu isimde bir müşteri zaten var.');
         return;
     }
 
@@ -708,12 +1075,12 @@ customerForm.addEventListener('submit', async (e) => {
     };
     
     state.customers.push(newCustomer);
-    await DB.set('customers', state.customers);
+    await saveCurrentDatabase();
     
     renderCustomerTable();
     updateDatalists();
     customerForm.reset();
-    showToast('Müşteri eklendi!', 'success');
+    Logger.success('Customer added', 'Müşteri eklendi!');
 });
 
 
@@ -759,19 +1126,19 @@ productForm.addEventListener('submit', async (e) => {
     const sellingPrice = parseFloat(document.getElementById('p-selling-price').value);
     
     if (!name || !buyingPrice || !sellingPrice) {
-        showToast('Ürün adı ve her iki fiyat gerekli.', 'error');
+        Logger.warn('Product creation with missing fields', 'Ürün adı ve her iki fiyat gerekli.');
         return;
     }
     
     // Default stock is 0
     const newProduct = { id: DB.generateId(), name, type, unit, buyingPrice, sellingPrice, stock: 0 };
     state.products.push(newProduct);
-    await DB.set('products', state.products);
+    await saveCurrentDatabase();
     
     renderProductTable();
     updateDatalists();
     productForm.reset();
-    showToast('Ürün eklendi!', 'success');
+    Logger.success('Product added', 'Ürün eklendi!');
 });
 
 /*
@@ -881,17 +1248,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    // --- Database Management Handlers ---
+    const createDatabaseForm = document.getElementById('create-database-form');
+    if (createDatabaseForm) {
+        createDatabaseForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('new-db-name').value.trim();
+            if (await createDatabase(name)) {
+                createDatabaseForm.reset();
+            }
+        });
+    }
+
+    // Database delete handlers
+    document.getElementById('database-table-body').addEventListener('click', async (e) => {
+        const switchBtn = e.target.closest('.btn-switch-db');
+        if (switchBtn) {
+            const dbId = switchBtn.getAttribute('data-id');
+            const dbName = switchBtn.getAttribute('data-name') || 'Veritabanı';
+            showLoading(`"${dbName}" veritabanına geçiliyor...`);
+            await saveCurrentDatabase();
+            await loadDatabase(dbId);
+            hideNotification();
+            return;
+        }
+
+        const deleteBtn = e.target.closest('.btn-delete-db');
+        if (deleteBtn) {
+            const dbId = deleteBtn.getAttribute('data-id');
+            await deleteDatabase(dbId);
+            renderDatabaseTable();
+            return;
+        }
+    });
+
+    // Export all databases
+    const exportDatabasesBtn = document.getElementById('export-databases-btn');
+    if (exportDatabasesBtn) {
+        exportDatabasesBtn.addEventListener('click', async () => {
+            await saveCurrentDatabase();
+            await exportAllDatabases();
+        });
+    }
+
+    // Import databases
+    const importDatabasesBtn = document.getElementById('import-databases-btn');
+    const importDatabasesFile = document.getElementById('import-databases-file');
+    if (importDatabasesBtn && importDatabasesFile) {
+        importDatabasesBtn.addEventListener('click', () => {
+            importDatabasesFile.click();
+        });
+
+        importDatabasesFile.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                await importAllDatabases(file);
+                renderDatabaseTable();
+                importDatabasesFile.value = '';
+            }
+        });
+    }
+
     // --- Export Buttons
     const exportTransactionsBtn = document.getElementById('export-transactions-btn');
     if (exportTransactionsBtn) {
         exportTransactionsBtn.addEventListener('click', async () => {
             if (state.transactions.length === 0) {
-                showToast('No transactions to export', 'error');
+                Logger.warn('Export attempted with no transactions', 'Aktarılacak işlem yok.');
                 return;
             }
             try {
+                showLoading('İşlemler dışa aktarılıyor...');
                 await waitForPapa();
                 const exportData = state.transactions.map(t => ({
+                    'İşlem ID': t.id,
                     Tarih: formatDateDisplay(t.date),
                     Müşteri: t.customer,
                     Tür: t.type,
@@ -903,8 +1333,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     Toplam: t.total
                 }));
                 exportToCSV(exportData, `islemler_${getTodayDateFilename()}.csv`);
+                Logger.success(`Exported ${exportData.length} transactions`, null);
             } catch (error) {
-                showToast(`Export failed: ${error.message}`, 'error');
+                Logger.error(`Transaction export failed: ${error.message}`, 'Dışa aktarma başarısız oldu.');
             }
         });
     }
@@ -913,10 +1344,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (exportCustomersBtn) {
         exportCustomersBtn.addEventListener('click', async () => {
             if (state.customers.length === 0) {
-                showToast('No customers to export', 'error');
+                Logger.warn('Export attempted with no customers', 'Aktarılacak müşteri yok.');
                 return;
             }
             try {
+                showLoading('Müşteriler dışa aktarılıyor...');
                 await waitForPapa();
                 const exportData = state.customers.map(c => ({
                     İsim: c.name,
@@ -930,8 +1362,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     'Toplam Ödeme': c.satis
                 }));
                 exportToCSV(exportData, `musteriler_${getTodayDateFilename()}.csv`);
+                Logger.success(`Exported ${exportData.length} customers`, null);
             } catch (error) {
-                showToast(`Export failed: ${error.message}`, 'error');
+                Logger.error(`Customer export failed: ${error.message}`, 'Dışa aktarma başarısız oldu.');
             }
         });
     }
@@ -940,10 +1373,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (exportProductsBtn) {
         exportProductsBtn.addEventListener('click', async () => {
             if (state.products.length === 0) {
-                showToast('No products to export', 'error');
+                Logger.warn('Export attempted with no products', 'Aktarılacak ürün yok.');
                 return;
             }
             try {
+                showLoading('Ürünler dışa aktarılıyor...');
                 await waitForPapa();
                 const exportData = state.products.map(p => ({
                     İsim: p.name,
@@ -954,8 +1388,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     Stok: p.stock || 0
                 }));
                 exportToCSV(exportData, `urunler_${getTodayDateFilename()}.csv`);
+                Logger.success(`Exported ${exportData.length} products`, null);
             } catch (error) {
-                showToast(`Export failed: ${error.message}`, 'error');
+                Logger.error(`Product export failed: ${error.message}`, 'Dışa aktarma başarısız oldu.');
             }
         });
     }
@@ -978,12 +1413,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const id = deleteButton.getAttribute('data-id');
             if (confirm('Bu işlemi silmek istediğinizden emin misiniz?')) {
                 state.transactions = state.transactions.filter(t => t.id !== id);
-                await DB.set('transactions', state.transactions);
+                await saveCurrentDatabase();
                 await updateCustomerAggregates(true);
                 updateDatalists();
                 renderTransactionTable(state.transactions);
                 renderDashboard(); 
-                showToast('İşlem silindi.', 'success');
+                Logger.success('Transaction deleted', 'İşlem silindi.');
             }
         }
     });
@@ -1025,20 +1460,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                  }
                  state.transactions = state.transactions.filter(t => t.customer !== customer.name);
-                 await DB.set('transactions', state.transactions);
+                 Logger.info(`Deleted customer ${customer.name} and ${customerTransactions.length} related transactions`);
             } else if (!confirm('Bu müşteriyi silmek istediğinizden emin misiniz? Bu geri alınamaz.')) {
                 return;
             }
 
             state.customers = state.customers.filter(c => c.id !== id);
-            await DB.set('customers', state.customers);
+            await saveCurrentDatabase();
             
             await updateCustomerAggregates(true);
             renderCustomerTable();
             updateDatalists();
             renderDashboard();
             renderTransactionTable(state.transactions);
-            showToast('Müşteri silindi.', 'success');
+            Logger.success('Customer deleted', 'Müşteri silindi.');
         }
     });
 
@@ -1057,17 +1492,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             return;
         }
-
         // Check for delete
         const deleteButton = e.target.closest('.btn-delete-product');
         if (deleteButton) {
             const id = deleteButton.getAttribute('data-id');
             if (confirm('Bu ürünü silmek istediğinizden emin misiniz?')) {
                 state.products = state.products.filter(p => p.id !== id);
-                await DB.set('products', state.products);
+                await saveCurrentDatabase();
                 renderProductTable();
                 updateDatalists();
-                showToast('Ürün silindi.', 'success');
+                Logger.success('Product deleted', 'Ürün silindi.');
             }
             return; 
         }
@@ -1112,8 +1546,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         if (!updatedProduct.name || buyingPrice < 0 || sellingPrice < 0) {
-            showToast('Geçersiz ürün adı veya fiyat.', 'error');
-            return;
+                Logger.warn('Invalid product data for update', 'Geçersiz ürün adı veya fiyat.');
         }
 
         // Preserve existing stock
@@ -1123,12 +1556,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         state.products = state.products.map(p => p.id === id ? updatedProduct : p);
-        await DB.set('products', state.products);
+        await saveCurrentDatabase();
 
         renderProductTable();
         updateDatalists();
         editModal.style.display = 'none';
-        showToast('Ürün güncellendi!', 'success');
+        Logger.success('Product updated', 'Ürün güncellendi!');
     });
 
     // --- Add Stock Modal Listeners ---
@@ -1146,17 +1579,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const quantityToAdd = parseFloat(document.getElementById('add-stock-quantity').value);
 
         if (isNaN(quantityToAdd) || quantityToAdd <= 0) {
-            showToast('Lütfen geçerli bir miktar girin.', 'error');
+            Logger.warn('Invalid stock quantity entered', 'Lütfen geçerli bir miktar girin.');
             return;
         }
 
         const product = state.products.find(p => p.id === id);
         if (product) {
             product.stock = (product.stock || 0) + quantityToAdd;
-            await DB.set('products', state.products);
+            await saveCurrentDatabase();
             renderProductTable();
             stockModal.style.display = 'none';
-            showToast('Stok güncellendi!', 'success');
+            Logger.success(`Stock updated for ${product.name}: +${quantityToAdd}`, 'Stok güncellendi!');
         }
     });
 
@@ -1204,14 +1637,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         if (!updatedCustomer.name) {
-            showToast('Müşteri adı gerekli.', 'error');
+            Logger.warn('Customer update with empty name', 'Müşteri adı gerekli.');
             return;
         }
 
         // Check for duplicate name, excluding current
         const existing = state.customers.find(c => c.name.toLowerCase() === updatedCustomer.name.toLowerCase() && c.id !== id);
         if (existing) {
-            showToast('Bu isimde bir müşteri zaten var.', 'error');
+            Logger.warn('Duplicate customer name in update', 'Bu isimde bir müşteri zaten var.');
             return;
         }
 
@@ -1223,18 +1656,60 @@ document.addEventListener('DOMContentLoaded', async () => {
                     t.customer = updatedCustomer.name;
                 }
             });
-            await DB.set('transactions', state.transactions);
         }
 
         state.customers = state.customers.map(c => c.id === id ? updatedCustomer : c);
-        await DB.set('customers', state.customers);
+        await saveCurrentDatabase();
 
         await updateCustomerAggregates(true);
         renderCustomerTable();
         updateDatalists();
         renderDashboard();
         editCustomerModal.style.display = 'none';
-        showToast('Müşteri güncellendi!', 'success');
+        Logger.success('Customer updated', 'Müşteri güncellendi!');
     });
 
+    // --- Notification Panel Event Listeners ---
+    const notificationCloseBtn = document.getElementById('notification-close');
+    const notificationToggleLogsBtn = document.getElementById('notification-toggle-logs');
+    const notificationLogs = document.getElementById('notification-logs');
+    let logsExpanded = false;
+
+    notificationCloseBtn.addEventListener('click', () => {
+        hideNotification();
+    });
+
+    notificationToggleLogsBtn.addEventListener('click', () => {
+        logsExpanded = !logsExpanded;
+        if (logsExpanded) {
+            notificationLogs.classList.add('expanded');
+            notificationToggleLogsBtn.textContent = 'Günlüğü Gizle';
+            updateNotificationLogs();
+        } else {
+            notificationLogs.classList.remove('expanded');
+            notificationToggleLogsBtn.textContent = 'Günlüğü Göster';
+        }
+    });
+
+    function updateNotificationLogs() {
+        const logs = Logger.getAll();
+        const logsContainer = document.getElementById('notification-logs');
+        logsContainer.innerHTML = '';
+        
+        // Show last 10 logs
+        const recentLogs = logs.slice(-10).reverse();
+        recentLogs.forEach(log => {
+            const entry = document.createElement('div');
+            entry.className = `notification-log-entry ${log.type}`;
+            entry.textContent = `[${log.timestamp}] ${log.message}`;
+            logsContainer.appendChild(entry);
+        });
+        
+        if (logs.length > 0) {
+            notificationToggleLogsBtn.style.display = 'block';
+        }
+    }
+
+    // Initialize app
+    Logger.info('Application started', 'Uygulama başlatıldı');
 });

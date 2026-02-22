@@ -317,6 +317,12 @@ subTabButtons.forEach(button => {
     });
 });
 
+// --- MODAL MANAGEMENT ---
+function closeAllModals() {
+    document.getElementById('edit-product-modal').style.display = 'none';
+    document.getElementById('edit-customer-modal').style.display = 'none';
+    document.getElementById('add-stock-modal').style.display = 'none';
+}
 
 // --- DATA RENDERING ---
 
@@ -341,6 +347,7 @@ function renderDashboard() {
     let totalCredit = 0;
     let totalSales = 0;
     let totalCostOfGoods = 0;
+    let totalStockExpenses = 0;
 
     const customerAggregates = {};
     state.customers.forEach(c => {
@@ -375,11 +382,27 @@ function renderDashboard() {
         }
     });
 
-    document.getElementById('total-transactions').textContent = totalTransactions;
-    document.getElementById('total-credit').textContent = formatCurrency(totalCredit);
-    document.getElementById('total-sales').textContent = formatCurrency(totalSales);
-    document.getElementById('total-customers').textContent = state.customers.length;
+    // Calculate Stock Expenses (STOK EKLEME, STOK ÇIKIŞI, STOK AYARLAMA)
+    state.transactions.forEach(t => {
+        if (t.type === 'STOK EKLEME' || t.type === 'STOK ÇIKIŞI' || t.type === 'STOK AYARLAMA') {
+            totalStockExpenses += t.total;
+        }
+    });
 
+    document.getElementById('total-transactions').textContent = totalTransactions;
+    document.getElementById('total-customers').textContent = state.customers.length;
+    document.getElementById('total-sales').textContent = formatCurrency(totalSales);
+    document.getElementById('total-stock-expenses').textContent = formatCurrency(totalStockExpenses);
+    
+    // Calculate total net debt (sum of Durum column)
+    let totalNetDebt = 0;
+    Object.keys(customerAggregates).forEach(customerName => {
+        const ag = customerAggregates[customerName] || { veresiye: 0, satis: 0 };
+        const netDebt = (ag.veresiye || 0) - (ag.satis || 0);
+        totalNetDebt += netDebt;
+    });
+    document.getElementById('total-credit').textContent = formatCurrency(totalNetDebt);
+    
     const profit = totalSales - totalCostOfGoods;
     const profitEl = document.getElementById('net-balance');
     profitEl.textContent = formatCurrency(profit);
@@ -458,7 +481,7 @@ async function updateCustomerAggregates(saveToDB = false) {
 function updateDatalists() {
     const customerList = document.getElementById('customer-list');
     customerList.innerHTML = '';
-    state.customers.forEach(c => {
+    state.customers.filter(c => c.name !== 'STOK').forEach(c => {
         const option = document.createElement('option');
         option.value = c.name;
         customerList.appendChild(option);
@@ -573,6 +596,9 @@ async function loadDatabase(dbId) {
         return false;
     }
     
+    // Close all open modals
+    closeAllModals();
+    
     currentDatabaseId = dbId;
     
     // Load database data
@@ -601,7 +627,7 @@ async function saveDatabaseMetadata() {
 }
 
 async function saveCurrentDatabase() {
-    if (!currentDatabaseId) return;
+    if (!currentDatabaseId) return false;
     
     const now = new Date();
     const currentDb = databases.find(db => db.id === currentDatabaseId);
@@ -613,6 +639,7 @@ async function saveCurrentDatabase() {
     await DB.set(`db-${currentDatabaseId}-customers`, state.customers);
     await DB.set(`db-${currentDatabaseId}-products`, state.products);
     await saveDatabaseMetadata();
+    return true;
 }
 
 function updateCurrentDatabaseDisplay() {
@@ -647,7 +674,7 @@ function renderDatabaseTable() {
                 ${!isActive ? `<button class="btn btn-secondary btn-switch-db" data-id="${db.id}" data-name="${db.name}" title="Aç">
                     <svg width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21H3v-2a6 6 0 0 1 6-6h3v2m6-11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"></path></svg>
                     Aç
-                </button>` : '<span class="px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">Aktif</span>'}
+                </button>` : '<span class="px-3 py-3 bg-green-500 text-white text-sm font-semibold rounded">Aktif</span>'}
                 <button class="btn btn-danger btn-delete-db" data-id="${db.id}" title="Sil">
                     <svg id="icon-trash" width="16" height="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     Sil
@@ -790,7 +817,7 @@ transactionForm.addEventListener('submit', async (e) => {
     let price = parseFloat(tPrice.value);
     if ((!price || price === 0) && product) {
         // Use selling price as default
-        price = product.sellingPrice;
+        price = product.sellingPrice || 0;
     }
 
     const quantity = parseFloat(tQuantity.value);
@@ -809,8 +836,25 @@ transactionForm.addEventListener('submit', async (e) => {
         total: total
     };
 
-    if (!newTransaction.date || !newTransaction.customer || !newTransaction.productName || !newTransaction.quantity || !newTransaction.price) {
-        Logger.warn('Transaction submission with missing required fields', 'Lütfen tüm gerekli alanları doldurun.');
+    // Validation
+    if (!newTransaction.date) {
+        Logger.warn('Transaction submission with missing date', 'Lütfen tarih seçiniz.');
+        return;
+    }
+    if (!newTransaction.customer) {
+        Logger.warn('Transaction submission with missing customer', 'Lütfen müşteri adını girin.');
+        return;
+    }
+    if (!newTransaction.productName) {
+        Logger.warn('Transaction submission with missing product', 'Lütfen ürün seçiniz.');
+        return;
+    }
+    if (!newTransaction.quantity || newTransaction.quantity <= 0) {
+        Logger.warn('Transaction submission with invalid quantity', 'Lütfen geçerli bir miktar girin.');
+        return;
+    }
+    if (!newTransaction.price || newTransaction.price < 0) {
+        Logger.warn('Transaction submission with invalid price', 'Lütfen geçerli bir fiyat girin.');
         return;
     }
 
@@ -829,14 +873,6 @@ transactionForm.addEventListener('submit', async (e) => {
             }
             // For Sales (VERESİYE, SATIŞ, İKİSİDE), we decrease stock
             product.stock = currentStock - quantity;
-        }
-        
-        // Save product changes (will be saved again with transaction but this ensures consistency)
-        await saveCurrentDatabase();
-    } else {
-        if (!product) {
-            Logger.error('Product not found in database', 'Ürün bulunamadı!'); 
-            return; 
         }
     }
 
@@ -1124,23 +1160,49 @@ productForm.addEventListener('submit', async (e) => {
     const unit = document.getElementById('p-unit').value.trim();
     const buyingPrice = parseFloat(document.getElementById('p-buying-price').value);
     const sellingPrice = parseFloat(document.getElementById('p-selling-price').value);
+    const stock = parseFloat(document.getElementById('p-stock').value) || 0;
     
     if (!name || !buyingPrice || !sellingPrice) {
         Logger.warn('Product creation with missing fields', 'Ürün adı ve her iki fiyat gerekli.');
         return;
     }
     
-    // Default stock is 0
-    const newProduct = { id: DB.generateId(), name, type, unit, buyingPrice, sellingPrice, stock: 0 };
+    const newProduct = { id: DB.generateId(), name, type, unit, buyingPrice, sellingPrice, stock };
     state.products.push(newProduct);
+    
+    // Create transaction record if stock is added
+    if (stock > 0) {
+        const stockTransaction = {
+            id: DB.generateId(),
+            date: getTodayDate(),
+            customer: 'STOK',
+            type: 'STOK EKLEME',
+            productType: type,
+            productName: name,
+            quantity: stock,
+            unit: unit || '-',
+            price: buyingPrice,
+            total: stock * buyingPrice
+        };
+        state.transactions.push(stockTransaction);
+    }
+    
     await saveCurrentDatabase();
     
     renderProductTable();
     updateDatalists();
+    renderTransactionTable(state.transactions);
+    renderDashboard();
     productForm.reset();
-    Logger.success('Product added', 'Ürün eklendi!');
+    
+    if (stock > 0) {
+        Logger.success(`Product added with stock: ${name}`, `Ürün eklendi ve ${stock} stok kaydedildi!`);
+    } else {
+        Logger.success('Product added', 'Ürün eklendi!');
+    }
 });
 
+// --- PRODUCT MANAGEMENT ---
 /*
 // --- DATA IMPORT ---
 const importBtn = document.getElementById('import-btn');
@@ -1586,10 +1648,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const product = state.products.find(p => p.id === id);
         if (product) {
             product.stock = (product.stock || 0) + quantityToAdd;
+            
+            // Create a transaction log for stock addition
+            const stockTransaction = {
+                id: DB.generateId(),
+                date: getTodayDate(),
+                customer: 'STOK',
+                type: 'STOK EKLEME',
+                productType: product.type,
+                productName: product.name,
+                quantity: quantityToAdd,
+                unit: product.unit,
+                price: product.buyingPrice,
+                total: quantityToAdd * product.buyingPrice
+            };
+            
+            state.transactions.push(stockTransaction);
             await saveCurrentDatabase();
             renderProductTable();
+            renderTransactionTable(state.transactions);
+            updateDatalists();
             stockModal.style.display = 'none';
-            Logger.success(`Stock updated for ${product.name}: +${quantityToAdd}`, 'Stok güncellendi!');
+            Logger.success(`Stock updated for ${product.name}: +${quantityToAdd}`, 'Stok güncellendi! İşlem günlüğüne kaydedildi.');
         }
     });
 
